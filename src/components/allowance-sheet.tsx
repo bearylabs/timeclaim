@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { BottomSheet, Button } from './primitives';
+import { NativeDateTimeField } from './native-date-time-field';
 import { colors, font } from '@/constants/theme';
 import { MAIN_ALLOWANCES, type Allowance } from '@/domain/model';
 import { parseNumber } from '@/domain/time';
@@ -29,7 +30,7 @@ export function AllowanceSheet({ visible, initial, initialDate, labels, onClose,
     onClose();
   };
   return <BottomSheet onClose={onClose} title={initial ? 'Zulage bearbeiten' : 'Zulage eintragen'} visible={visible}>
-    <Field label="Datum"><TextInput onChangeText={setDate} placeholder="JJJJ-MM-TT" style={styles.input} value={date} /></Field>
+    <Field label="Datum"><NativeDateTimeField mode="date" onChange={setDate} value={date} /></Field>
     <Field label="Art der Zulage"><View style={styles.chips}>{labels.map((item) => <TouchableOpacity key={item} onPress={() => setLabel(item)} style={[styles.chip, label === item && styles.chipActive]}><Text style={[styles.chipText, label === item && styles.chipTextActive]}>{item}</Text></TouchableOpacity>)}</View></Field>
     <Field label="Bezeichnung"><TextInput onChangeText={setLabel} placeholder="z. B. Schichtzulage" style={styles.input} value={label} /></Field>
     <View style={styles.two}><Field label="Anzahl"><TextInput keyboardType="decimal-pad" onChangeText={setQuantity} style={styles.input} value={quantity} /></Field><Field label="Betrag in € (optional)"><TextInput keyboardType="decimal-pad" onChangeText={setAmount} placeholder="0,00" style={styles.input} value={amount} /></Field></View>

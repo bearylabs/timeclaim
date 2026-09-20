@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { BottomSheet, Button } from './primitives';
+import { NativeDateTimeField } from './native-date-time-field';
 import { colors, font } from '@/constants/theme';
 import { MAIN_ALLOWANCES, type Employment, type MainAllowance, type WorkDay } from '@/domain/model';
 import { calculateDay, formatDecimal, formatHours, parseNumber } from '@/domain/time';
@@ -52,7 +53,7 @@ export function DaySheet({ visible, date: initialDate, employment, presetWork, o
   };
 
   return <BottomSheet onClose={onClose} title={hasAnything ? 'Eintrag bearbeiten' : 'Neuer Eintrag'} visible={visible}>
-    <Field label="Datum"><TextInput onChangeText={setDate} placeholder="JJJJ-MM-TT" style={styles.input} value={date} /></Field>
+    <Field label="Datum"><NativeDateTimeField mode="date" onChange={setDate} value={date} /></Field>
     <Field label="Was war an diesem Tag?">
       <View style={styles.toggles}>
         <Toggle active={toggles.work} label="Arbeitszeit" onPress={() => toggle('work')} />
@@ -61,7 +62,7 @@ export function DaySheet({ visible, date: initialDate, employment, presetWork, o
       </View>
     </Field>
     {toggles.work ? <View style={styles.group}>
-      <View style={styles.two}><Field label="Beginn"><TextInput keyboardType="numbers-and-punctuation" onChangeText={setStart} style={[styles.input, styles.time]} value={start} /></Field><Field label="Ende"><TextInput keyboardType="numbers-and-punctuation" onChangeText={setEnd} style={[styles.input, styles.time]} value={end} /></Field></View>
+      <View style={styles.two}><Field label="Beginn"><NativeDateTimeField mode="time" onChange={setStart} value={start} /></Field><Field label="Ende"><NativeDateTimeField mode="time" onChange={setEnd} value={end} /></Field></View>
       <Field label="Pause">
         <View style={styles.pauseOptions}>{[0, 30, 45, 60].map((value) => <TouchableOpacity key={value} onPress={() => setPause(String(value))} style={[styles.pause, Number(pause) === value && styles.pauseActive]}><Text style={[styles.pauseText, Number(pause) === value && styles.pauseTextActive]}>{value ? `${value} min` : 'Keine'}</Text></TouchableOpacity>)}</View>
         <View style={styles.customPause}><Text style={styles.muted}>oder eigene Dauer in Minuten</Text><TextInput keyboardType="number-pad" onChangeText={setPause} style={[styles.input, styles.pauseInput]} value={pause} /></View>
@@ -88,7 +89,7 @@ const styles = StyleSheet.create({
   field: { flex: 1, gap: 7 }, label: { color: colors.muted, fontFamily: font.extraBold, fontSize: 12, letterSpacing: 0.7, textTransform: 'uppercase' },
   input: { width: '100%', height: 54, borderRadius: 14, paddingHorizontal: 14, backgroundColor: colors.soft, color: colors.ink, fontFamily: font.bold, fontSize: 16 },
   toggles: { flexDirection: 'row', gap: 8 }, toggle: { flex: 1, minHeight: 54, borderRadius: 16, backgroundColor: colors.soft, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }, toggleText: { color: colors.ink2, fontFamily: font.extraBold, fontSize: 12 }, toggleTextActive: { color: '#FFF' },
-  group: { gap: 16 }, two: { flexDirection: 'row', gap: 12 }, time: { fontFamily: font.extraBold, fontSize: 23, textAlign: 'center' },
+  group: { gap: 16 }, two: { flexDirection: 'row', gap: 12 },
   pauseOptions: { flexDirection: 'row', gap: 8 }, pause: { flex: 1, height: 46, borderRadius: 14, backgroundColor: colors.soft, alignItems: 'center', justifyContent: 'center' }, pauseActive: { backgroundColor: colors.accent }, pauseText: { fontFamily: font.extraBold, fontSize: 12, color: colors.ink }, pauseTextActive: { color: '#FFF' },
   customPause: { flexDirection: 'row', alignItems: 'center', gap: 10 }, pauseInput: { width: 100, textAlign: 'center', height: 46 }, muted: { color: colors.muted, fontFamily: font.semiBold, fontSize: 13, flex: 1 },
   calculation: { borderRadius: 18, padding: 14, backgroundColor: colors.soft, gap: 7 }, calcMain: { flexDirection: 'row', alignItems: 'baseline', gap: 8 }, calcValue: { color: colors.ink, fontFamily: font.extraBold, fontSize: 25 }, warning: { color: colors.amber, backgroundColor: colors.amberSoft, borderRadius: 12, padding: 10, fontFamily: font.bold, fontSize: 13 },
