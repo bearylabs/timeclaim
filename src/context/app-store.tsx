@@ -3,7 +3,7 @@ import { createContext, type PropsWithChildren, useContext, useEffect, useState 
 import type { Allowance, AppState, Employment } from '@/domain/model';
 import { calculateDay, dateKey, formatDecimal, monthKey } from '@/domain/time';
 
-const STORAGE_KEY = 'stundenbuch-v1';
+const STORAGE_KEY = 'stundenbuch-v2';
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
 export function newEmployment(name = 'Hauptjob', color = 0): Employment {
