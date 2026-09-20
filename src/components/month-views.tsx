@@ -41,7 +41,7 @@ export function MonthHero({ employment, info, month, selectedDate, onSelect, onO
     <View style={[styles.glow, { backgroundColor: theme.glow }]} />
     <Text style={styles.heroCaption}>{employment.name} · Netto im {MONTHS[month]}</Text>
     <View style={styles.bigRow}><Text style={styles.heroBig}>{formatHours(info.net)}</Text><Text style={styles.heroUnit}>Std</Text></View>
-    <Text style={styles.heroDecimal}>{formatDecimal(info.net)} Stunden dezimal</Text>
+    <Text style={styles.heroDecimal}>{info.worked} {info.worked === 1 ? 'Arbeitstag' : 'Arbeitstage'}</Text>
     <View style={styles.bars}>{info.days.map((item) => {
       const height = item.calculation ? Math.max(6, Math.round(item.calculation.net / max * 60)) : 3;
       return <TouchableOpacity accessibilityLabel={`${item.date}: ${item.calculation ? `${formatHours(item.calculation.net)} Stunden` : 'nicht erfasst'}`} key={item.date} onPress={() => onSelect(selectedDate === item.date ? null : item.date)} style={styles.barTouch}><View style={[styles.bar, { height, backgroundColor: item.calculation?.pause === 0 ? colors.amberBar : item.calculation ? '#FFF' : 'rgba(255,255,255,0.25)' }, selectedDate === item.date && styles.barSelected]} /></TouchableOpacity>;
