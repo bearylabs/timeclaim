@@ -52,7 +52,7 @@ export function MonthHero({ employment, info, month, selectedDate, onSelect, onO
     <TouchableOpacity onPress={() => selected && onOpenDay(selected.date)} style={styles.readout}>
       {selected ? <><Text style={styles.readoutBold}>{formatShortDate(selected.date)}</Text><Text style={styles.readoutText}>{selected.calculation && selected.work ? `${selected.work.start}–${selected.work.end} · ${formatHours(selected.calculation.net)} Std${selected.calculation.pause === 0 ? ' · Ohne Pause' : ''}` : 'Nicht erfasst'}</Text><Text style={styles.readoutGo}>{selected.calculation ? 'Bearbeiten' : 'Eintragen'} ›</Text></> : <Text style={styles.readoutHint}>Tippe auf einen Balken für Details</Text>}
     </TouchableOpacity>
-    <View style={styles.heroStats}><HeroStat label="Arbeitstage" value={String(info.worked)} /><HeroStat label="Ø pro Tag" value={info.worked ? formatHours(info.net / info.worked) : '–'} /><HeroStat label="Ohne Pause" value={String(info.noPause.length)} warning={Boolean(info.noPause.length)} /></View>
+    <View style={styles.heroStats}><HeroStat label="Eingesprungen" value={`${formatNumber(callIn)}×`} /><HeroStat label="Bereitschaft" value={`${formatNumber(standby)}×`} /><HeroStat label="Pausenfreie Tage" value={String(info.noPause.length)} warning={Boolean(info.noPause.length)} /></View>
   </View>;
 }
 
