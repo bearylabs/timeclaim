@@ -62,11 +62,11 @@ function formatShortDate(key: string) { const date = parseDateKey(key); return `
 
 export function DaysView({ employment, info, month, selectedDate, onSelectDate, onOpenDay }: { employment: Employment; info: MonthInfo; month: number; selectedDate: string | null; onSelectDate: (date: string | null) => void; onOpenDay: (date: string) => void }) {
   const [mode, setMode] = useState<'recorded' | 'all'>('recorded');
-  const visible = info.days.filter((item) => { const empty = !item.calculation && !item.allowances.length; const weekend = item.weekday === 0 || item.weekday === 6; return !(empty && (mode === 'recorded' || weekend)); });
+  const visible = info.days.filter((item) => mode === 'all' || item.calculation || item.allowances.length);
   const groups = visible.reduce<{ week: number; days: MonthDay[] }[]>((all, day) => { const week = isoWeek(parseDateKey(day.date)); const last = all.at(-1); if (!last || last.week !== week) all.push({ week, days: [day] }); else last.days.push(day); return all; }, []);
   return <>
     <MonthHero employment={employment} info={info} month={month} onOpenDay={onOpenDay} onSelect={onSelectDate} selectedDate={selectedDate} />
-    <SectionHeading right={<View style={styles.segment}><Segment active={mode === 'recorded'} label="Erfasst" onPress={() => setMode('recorded')} /><Segment active={mode === 'all'} label="Alle Werktage" onPress={() => setMode('all')} /></View>}>Tage</SectionHeading>
+    <SectionHeading right={<View style={styles.segment}><Segment active={mode === 'recorded'} label="Erfasst" onPress={() => setMode('recorded')} /><Segment active={mode === 'all'} label="Alle Tage" onPress={() => setMode('all')} /></View>}>Tage</SectionHeading>
     {!groups.length ? <Card><Text style={styles.empty}>In diesem Monat gibt es für „{employment.name}“ noch keine Einträge. Tippe auf das Plus, um deinen ersten Arbeitstag zu erfassen.</Text></Card> : <View style={styles.dayList}>{groups.map((group) => <View key={group.week} style={styles.week}><View style={styles.weekHeader}><Text style={styles.weekText}>KW {group.week}</Text><Text style={styles.weekText}>{formatHours(group.days.reduce((sum, day) => sum + (day.calculation?.net ?? 0), 0))} Std</Text></View>{group.days.map((day) => <DayCard day={day} key={day.date} onPress={() => onOpenDay(day.date)} />)}</View>)}</View>}
   </>;
 }
