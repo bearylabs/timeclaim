@@ -58,7 +58,7 @@ export function DaySheet({ visible, date: initialDate, employment, presetWork, o
       <View style={styles.toggles}>
         <Toggle active={toggles.work} label="Arbeitszeit" onPress={() => toggle('work')} />
         <Toggle active={toggles.Bereitschaft} color={colors.teal} label="Bereitschaft" onPress={() => toggle('Bereitschaft')} />
-        <Toggle active={toggles.Einspringen} color={colors.violet} label="Einspringen" onPress={() => toggle('Einspringen')} />
+        <Toggle active={toggles.Einspringen} color={colors.violet} label="Eingesprungen" onPress={() => toggle('Einspringen')} />
       </View>
     </Field>
     {toggles.work ? <View style={styles.group}>
