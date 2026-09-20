@@ -1,5 +1,5 @@
 import { type ComponentProps, type PropsWithChildren, type ReactNode } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, font, shadow } from '@/constants/theme';
 
@@ -21,14 +21,14 @@ export function SectionHeading({ children, right }: PropsWithChildren<{ right?: 
 
 export function BottomSheet({ visible, title, onClose, children }: PropsWithChildren<{ visible: boolean; title: string; onClose: () => void }>) {
   return <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
-    <View style={styles.backdrop}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.backdrop}>
       <Pressable onPress={onClose} style={StyleSheet.absoluteFill} />
       <View style={styles.sheet}>
         <View style={styles.grab} />
         <View style={styles.sheetHeader}><Text style={styles.sheetTitle}>{title}</Text><TouchableOpacity onPress={onClose} style={styles.close}><Text style={styles.closeText}>Schließen</Text></TouchableOpacity></View>
-        <ScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>
+        <ScrollView contentContainerStyle={styles.sheetBody} keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   </Modal>;
 }
 
