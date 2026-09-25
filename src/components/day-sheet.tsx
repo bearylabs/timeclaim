@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { BottomSheet, Button } from './primitives';
 import { NativeDateTimeField } from './native-date-time-field';
@@ -38,14 +38,16 @@ export function DaySheet({ visible, date: initialDate, employment, presetWork, o
     Einspringen: managed.Einspringen?.amount?.toString().replace('.', ',') ?? '',
   });
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const calculation = useMemo(() => calculateDay({ start, end, pause: Number(pause) }), [start, end, pause]);
 
   const toggle = (key: keyof typeof toggles) => setToggles((value) => ({ ...value, [key]: !value[key] }));
   const save = async (closeAfter = true) => {
-    if (saving) return false;
+    if (savingRef.current) return false;
     if (!date) { Alert.alert('Datum wählen'); return false; }
     if (!toggles.work && !toggles.Bereitschaft && !toggles.Einspringen) { Alert.alert('Auswahl fehlt', 'Wähle Arbeitszeit, Bereitschaft oder Einspringen.'); return false; }
     if (toggles.work && !calculation) { Alert.alert('Ungültige Zeit', 'Beginn und Ende müssen unterschiedlich sein.'); return false; }
+    savingRef.current = true;
     setSaving(true);
     try {
       const ok = await onSave(initialDate, date, toggles.work ? { start, end, pause: Math.max(0, Math.round(Number(pause) || 0)), note: note.trim() } : null, {
@@ -55,21 +57,24 @@ export function DaySheet({ visible, date: initialDate, employment, presetWork, o
       if (ok && closeAfter) onClose();
       return ok;
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const remove = async () => {
-    if (saving) return;
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     try {
       if (await onDelete(initialDate)) onClose();
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
-  return <BottomSheet onClose={onClose} title={hasAnything ? 'Eintrag bearbeiten' : 'Neuer Eintrag'} visible={visible}>
+  return <BottomSheet onClose={saving ? () => undefined : onClose} title={hasAnything ? 'Eintrag bearbeiten' : 'Neuer Eintrag'} visible={visible}>
     <Field label="Datum"><NativeDateTimeField mode="date" onChange={setDate} value={date} /></Field>
     <Field label="Was war an diesem Tag?">
       <View style={styles.toggles}>

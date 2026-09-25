@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { BottomSheet, Button } from './primitives';
 import { NativeDateTimeField } from './native-date-time-field';
@@ -22,30 +22,35 @@ export function AllowanceSheet({ visible, initial, initialDate, labels, onClose,
   const [quantity, setQuantity] = useState(String(initial?.quantity ?? 1).replace('.', ','));
   const [amount, setAmount] = useState(initial?.amount?.toString().replace('.', ',') ?? '');
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const save = async () => {
-    if (saving) return;
+    if (savingRef.current) return;
     const parsedQuantity = parseNumber(quantity) ?? 1;
     if (!date) return Alert.alert('Datum wählen');
     if (!label.trim()) return Alert.alert('Bezeichnung eintragen');
     if (parsedQuantity <= 0) return Alert.alert('Anzahl muss größer als 0 sein');
+    savingRef.current = true;
     setSaving(true);
     try {
       const saved = await onSave({ id: initial?.id ?? `${Date.now()}-${Math.random()}`, date, label: label.trim(), quantity: parsedQuantity, amount: parseNumber(amount) });
       if (saved) onClose();
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
   const remove = async () => {
-    if (!initial || saving) return;
+    if (!initial || savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     try {
       if (await onDelete(initial)) onClose();
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
-  return <BottomSheet onClose={onClose} title={initial ? 'Zulage bearbeiten' : 'Zulage eintragen'} visible={visible}>
+  return <BottomSheet onClose={saving ? () => undefined : onClose} title={initial ? 'Zulage bearbeiten' : 'Zulage eintragen'} visible={visible}>
     <Field label="Datum"><NativeDateTimeField mode="date" onChange={setDate} value={date} /></Field>
     <Field label="Art der Zulage"><View style={styles.chips}>{labels.map((item) => <TouchableOpacity key={item} onPress={() => setLabel(item)} style={[styles.chip, label === item && styles.chipActive]}><Text style={[styles.chipText, label === item && styles.chipTextActive]}>{item}</Text></TouchableOpacity>)}</View></Field>
     <Field label="Bezeichnung"><TextInput onChangeText={setLabel} placeholder="z. B. Schichtzulage" style={styles.input} value={label} /></Field>

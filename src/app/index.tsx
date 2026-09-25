@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AllowanceSheet } from '@/components/allowance-sheet';
@@ -29,7 +29,13 @@ export default function HomeScreen() {
   const [month, setMonth] = useState(now.getMonth());
   const [tab, setTab] = useState<Tab>('days');
   const [sheet, setSheet] = useState<Sheet>(null);
-  const [toast, setToast] = useState<{ message: string; action?: string; run?: () => void } | null>(null);
+  const [toast, setToast] = useState<{ message: string; action?: string; run?: () => Promise<void> } | null>(null);
+  const [toastActionRunning, setToastActionRunning] = useState(false);
+  const [selectingEmployment, setSelectingEmployment] = useState(false);
+  const [removingDemo, setRemovingDemo] = useState(false);
+  const selectingEmploymentRef = useRef(false);
+  const removingDemoRef = useRef(false);
+  const toastActionRunningRef = useRef(false);
   const insets = useSafeAreaInsets();
   const info = useMemo(() => getMonthInfo(activeEmployment, year, month), [activeEmployment, year, month]);
   const deviationCount = getDeviationCount(activeEmployment, info);
@@ -43,13 +49,16 @@ export default function HomeScreen() {
     return () => clearTimeout(timeout);
   }, [toast]);
 
-  const notify = (message: string, action?: string, run?: () => void) => setToast({ message, action, run });
+  const notify = (message: string, action?: string, run?: () => Promise<void>) => setToast({ message, action, run });
   const shiftMonth = (offset: number) => { const next = new Date(year, month + offset, 1); setYear(next.getFullYear()); setMonth(next.getMonth()); };
   const openDay = (date: string, presetWork = true) => setSheet({ type: 'day', date, presetWork });
 
   const reportError = (reason: unknown) => {
     console.error('Persistent store operation failed.', reason);
-    notify(reason instanceof Error && reason.message ? reason.message : 'Die Änderung konnte nicht gespeichert werden.');
+    const message = reason instanceof Error && /^(Das|Der|Die|Ungültige|„)/.test(reason.message)
+      ? reason.message
+      : 'Die Änderung konnte nicht gespeichert werden. Bitte versuche es erneut.';
+    notify(message);
   };
   const isReady = () => {
     if (hydrated) return true;
@@ -79,13 +88,16 @@ export default function HomeScreen() {
 
   const deleteDay = async (date: string) => {
     if (!isReady()) return false;
+    const employmentId = activeEmployment.id;
     const oldWork = activeEmployment.days[date];
     const oldAllowances = activeEmployment.allowances.filter((item) => item.date === date);
     try {
       await persistDeleteDay(date);
-      notify('Eintrag gelöscht', 'Rückgängig', () => {
-        if (!isReady()) return;
-        void restoreDay(date, oldWork, oldAllowances).catch(reportError);
+      notify('Eintrag gelöscht', 'Rückgängig', async () => {
+        try {
+          await restoreDay(employmentId, date, oldWork, oldAllowances);
+          notify('Eintrag wiederhergestellt');
+        } catch (reason) { reportError(reason); }
       });
       return true;
     } catch (reason) { reportError(reason); return false; }
@@ -102,11 +114,14 @@ export default function HomeScreen() {
   };
   const deleteAllowance = async (allowance: Allowance) => {
     if (!isReady()) return false;
+    const employmentId = activeEmployment.id;
     try {
       await persistDeleteAllowance(allowance.id);
-      notify('Zulage gelöscht', 'Rückgängig', () => {
-        if (!isReady()) return;
-        void restoreAllowance(allowance).catch(reportError);
+      notify('Zulage gelöscht', 'Rückgängig', async () => {
+        try {
+          await restoreAllowance(employmentId, allowance);
+          notify('Zulage wiederhergestellt');
+        } catch (reason) { reportError(reason); }
       });
       return true;
     } catch (reason) { reportError(reason); return false; }
@@ -117,14 +132,20 @@ export default function HomeScreen() {
     catch (reason) { reportError(reason); return false; }
   };
   const selectEmployment = async (id: string) => {
-    if (!isReady() || id === state.activeEmploymentId) return;
+    if (!isReady() || id === state.activeEmploymentId || selectingEmploymentRef.current) return;
+    selectingEmploymentRef.current = true;
+    setSelectingEmployment(true);
     try { await setActiveEmployment(id); }
     catch (reason) { reportError(reason); }
+    finally { selectingEmploymentRef.current = false; setSelectingEmployment(false); }
   };
   const removeDemo = async () => {
-    if (!isReady()) return;
+    if (!isReady() || removingDemoRef.current) return;
+    removingDemoRef.current = true;
+    setRemovingDemo(true);
     try { await clearDemo(); notify('Beispieldaten gelöscht'); }
     catch (reason) { reportError(reason); }
+    finally { removingDemoRef.current = false; setRemovingDemo(false); }
   };
   const restoreBackup = async (next: Parameters<typeof replace>[0]) => {
     if (!isReady()) return false;
@@ -136,13 +157,23 @@ export default function HomeScreen() {
     try { await persistWipe(); notify('Alle Daten gelöscht'); return true; }
     catch (reason) { reportError(reason); return false; }
   };
+  const runToastAction = async () => {
+    if (!toast?.run || toastActionRunningRef.current) return;
+    const run = toast.run;
+    toastActionRunningRef.current = true;
+    setToastActionRunning(true);
+    setToast(null);
+    try { await run(); }
+    catch (reason) { reportError(reason); }
+    finally { toastActionRunningRef.current = false; setToastActionRunning(false); }
+  };
 
   return <SafeAreaView edges={['top']} style={styles.safe}>
     <ScrollView automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'} contentContainerStyle={[styles.content, { paddingBottom: 112 + insets.bottom }]} keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       <View style={styles.top}><Text style={styles.title}>TimeClaim</Text><RoundButton icon="settings-outline" label="Einstellungen öffnen" onPress={() => setSheet({ type: 'settings' })} /></View>
       <View style={styles.monthBar}><RoundButton icon="chevron-back" label="Vorheriger Monat" onPress={() => shiftMonth(-1)} /><TouchableOpacity onPress={() => { setYear(now.getFullYear()); setMonth(now.getMonth()); }} style={styles.monthLabel}><Text style={styles.monthText}>{MONTHS[month]} {year}</Text>{year !== now.getFullYear() || month !== now.getMonth() ? <Text style={styles.todayHint}>Zum aktuellen Monat</Text> : null}</TouchableOpacity><RoundButton icon="chevron-forward" label="Nächster Monat" onPress={() => shiftMonth(1)} /></View>
-      <ScrollView contentContainerStyle={styles.jobContent} horizontal showsHorizontalScrollIndicator={false} style={styles.jobs}>{state.employments.map((employment) => { const active = employment.id === state.activeEmploymentId; const color = employmentColors[employment.color].main; return <TouchableOpacity key={employment.id} onPress={() => { void selectEmployment(employment.id); }} style={[styles.jobChip, active && { backgroundColor: color }]}><View style={[styles.jobDot, { backgroundColor: active ? 'rgba(255,255,255,0.9)' : color }]} /><Text style={[styles.jobText, active && styles.jobTextActive]}>{employment.name}</Text></TouchableOpacity>})}</ScrollView>
-      {hasDemo ? <View style={styles.demo}><Text style={styles.demoText}>Beispieldaten – so sieht TimeClaim mit Einträgen aus.</Text><TouchableOpacity onPress={() => { void removeDemo(); }}><Text style={styles.demoAction}>Beispieldaten löschen</Text></TouchableOpacity></View> : null}
+      <ScrollView contentContainerStyle={styles.jobContent} horizontal showsHorizontalScrollIndicator={false} style={styles.jobs}>{state.employments.map((employment) => { const active = employment.id === state.activeEmploymentId; const color = employmentColors[employment.color].main; return <TouchableOpacity disabled={selectingEmployment} key={employment.id} onPress={() => { void selectEmployment(employment.id); }} style={[styles.jobChip, active && { backgroundColor: color }, selectingEmployment && styles.disabled]}><View style={[styles.jobDot, { backgroundColor: active ? 'rgba(255,255,255,0.9)' : color }]} /><Text style={[styles.jobText, active && styles.jobTextActive]}>{employment.name}</Text></TouchableOpacity>})}</ScrollView>
+      {hasDemo ? <View style={styles.demo}><Text style={styles.demoText}>Beispieldaten – so sieht TimeClaim mit Einträgen aus.</Text><TouchableOpacity disabled={removingDemo} onPress={() => { void removeDemo(); }} style={removingDemo && styles.disabled}><Text style={styles.demoAction}>Beispieldaten löschen</Text></TouchableOpacity></View> : null}
       {tab === 'days' ? <DaysView employment={activeEmployment} info={info} month={month} onOpenDay={openDay} /> : tab === 'allowances' ? <AllowancesView employment={activeEmployment} info={info} onOpen={(id) => setSheet({ type: 'allowance', id, date: defaultDate })} /> : <ReconciliationView employment={activeEmployment} info={info} key={`${activeEmployment.id}-${info.key}`} onBillingChange={saveBilling} onOpenDay={openDay} />}
     </ScrollView>
 
@@ -152,35 +183,46 @@ export default function HomeScreen() {
     {sheet?.type === 'allowance' ? <AllowanceSheet initial={editingAllowance} initialDate={sheet.date} key={`allowance-${sheet.id ?? 'new'}-${sheet.date}`} labels={allLabels} onClose={() => setSheet(null)} onDelete={deleteAllowance} onSave={saveAllowance} visible /> : null}
     <SettingsMenu onClose={() => setSheet(null)} onOpenExport={() => setSheet({ type: 'backup' })} onOpenJobs={() => setSheet({ type: 'jobs' })} visible={sheet?.type === 'settings'} />
     <JobsSheet
-      onAdd={() => {
-        if (!isReady()) return;
+      onAdd={async () => {
+        if (!isReady()) return false;
         const used = new Set(state.employments.map((item) => item.color));
         const color = [0, 1, 2, 3].find((item) => !used.has(item)) ?? 0;
-        void addEmployment('Neuer Job', color).catch(reportError);
+        try {
+          await addEmployment('Neuer Job', color);
+          notify('Arbeitsverhältnis hinzugefügt');
+          return true;
+        } catch (reason) { reportError(reason); return false; }
       }}
-      onChange={(id, patch) => {
-        if (!isReady()) return;
-        void changeEmployment(id, patch).catch(reportError);
+      onChange={async (id, patch) => {
+        if (!isReady()) return false;
+        try { await changeEmployment(id, patch); return true; }
+        catch (reason) { reportError(reason); return false; }
       }}
       onClose={() => setSheet(null)}
-      onDelete={(id) => {
-        if (!isReady()) return;
+      onDelete={async (id) => {
+        if (!isReady()) return false;
         const removed = state.employments.find((item) => item.id === id);
-        if (!removed) { notify('Das Arbeitsverhältnis wurde nicht gefunden.'); return; }
+        if (!removed) { notify('Das Arbeitsverhältnis wurde nicht gefunden.'); return false; }
         const wasActive = id === state.activeEmploymentId;
-        void deleteEmployment(id).then(() => notify(`„${removed.name}“ gelöscht`, 'Rückgängig', () => {
-          if (!isReady()) return;
-          void restoreEmployment(removed, wasActive).catch(reportError);
-        })).catch(reportError);
+        try {
+          await deleteEmployment(id);
+          notify(`„${removed.name}“ gelöscht`, 'Rückgängig', async () => {
+            try {
+              await restoreEmployment(removed, wasActive);
+              notify(`„${removed.name}“ wiederhergestellt`);
+            } catch (reason) { reportError(reason); }
+          });
+          return true;
+        } catch (reason) { reportError(reason); return false; }
       }}
       state={state}
       visible={sheet?.type === 'jobs'}
     />
     {sheet?.type === 'backup' ? <BackupSheet key="backup" onClose={() => setSheet(null)} onRestore={restoreBackup} onToast={notify} onWipe={wipe} state={state} visible /> : null}
-    <Toast action={toast?.action} message={toast?.message ?? null} onAction={() => { toast?.run?.(); setToast(null); }} />
+    <Toast action={toast?.action} actionDisabled={toastActionRunning} message={toast?.message ?? null} onAction={() => { void runToastAction(); }} />
   </SafeAreaView>;
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background }, content: { paddingHorizontal: 16, paddingTop: 18, gap: 16, maxWidth: 640, width: '100%', alignSelf: 'center' }, top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, title: { color: colors.ink, fontFamily: font.extraBold, fontSize: 31, letterSpacing: -1 }, monthBar: { flexDirection: 'row', alignItems: 'center', gap: 8 }, monthLabel: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center' }, monthText: { color: colors.ink, fontFamily: font.extraBold, fontSize: 19, letterSpacing: -0.4 }, todayHint: { color: colors.accent, fontFamily: font.bold, fontSize: 12 }, jobs: { marginHorizontal: -16 }, jobContent: { gap: 8, paddingHorizontal: 16, paddingVertical: 2 }, jobChip: { flexDirection: 'row', alignItems: 'center', gap: 9, height: 42, paddingHorizontal: 16, borderRadius: 21, backgroundColor: colors.card, ...shadow }, jobDot: { width: 9, height: 9, borderRadius: 5 }, jobText: { color: colors.ink2, fontFamily: font.extraBold, fontSize: 14 }, jobTextActive: { color: '#FFF' }, demo: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 16, backgroundColor: colors.accentSoft, gap: 7 }, demoText: { color: '#233FB0', fontFamily: font.semiBold, fontSize: 13 }, demoAction: { color: colors.accent, fontFamily: font.extraBold, fontSize: 13 }, dock: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', gap: 10, justifyContent: 'center', alignItems: 'center' }, nav: { flex: 1, maxWidth: 420, height: 68, padding: 6, borderRadius: 28, backgroundColor: 'rgba(255,255,255,0.96)', flexDirection: 'row', ...shadow }, tab: { flex: 1, borderRadius: 22, alignItems: 'center', justifyContent: 'center', gap: 2 }, tabActive: { backgroundColor: colors.accentSoft }, tabText: { color: colors.muted, fontFamily: font.extraBold, fontSize: 11 }, tabTextActive: { color: colors.accent }, badge: { position: 'absolute', top: 3, left: '58%', minWidth: 18, height: 18, paddingHorizontal: 5, borderRadius: 9, backgroundColor: colors.bad, alignItems: 'center', justifyContent: 'center' }, badgeText: { color: '#FFF', fontFamily: font.extraBold, fontSize: 10 }, fab: { width: 62, height: 62, borderRadius: 31, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center', ...shadow },
+  safe: { flex: 1, backgroundColor: colors.background }, disabled: { opacity: 0.5 }, content: { paddingHorizontal: 16, paddingTop: 18, gap: 16, maxWidth: 640, width: '100%', alignSelf: 'center' }, top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, title: { color: colors.ink, fontFamily: font.extraBold, fontSize: 31, letterSpacing: -1 }, monthBar: { flexDirection: 'row', alignItems: 'center', gap: 8 }, monthLabel: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center' }, monthText: { color: colors.ink, fontFamily: font.extraBold, fontSize: 19, letterSpacing: -0.4 }, todayHint: { color: colors.accent, fontFamily: font.bold, fontSize: 12 }, jobs: { marginHorizontal: -16 }, jobContent: { gap: 8, paddingHorizontal: 16, paddingVertical: 2 }, jobChip: { flexDirection: 'row', alignItems: 'center', gap: 9, height: 42, paddingHorizontal: 16, borderRadius: 21, backgroundColor: colors.card, ...shadow }, jobDot: { width: 9, height: 9, borderRadius: 5 }, jobText: { color: colors.ink2, fontFamily: font.extraBold, fontSize: 14 }, jobTextActive: { color: '#FFF' }, demo: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 16, backgroundColor: colors.accentSoft, gap: 7 }, demoText: { color: '#233FB0', fontFamily: font.semiBold, fontSize: 13 }, demoAction: { color: colors.accent, fontFamily: font.extraBold, fontSize: 13 }, dock: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', gap: 10, justifyContent: 'center', alignItems: 'center' }, nav: { flex: 1, maxWidth: 420, height: 68, padding: 6, borderRadius: 28, backgroundColor: 'rgba(255,255,255,0.96)', flexDirection: 'row', ...shadow }, tab: { flex: 1, borderRadius: 22, alignItems: 'center', justifyContent: 'center', gap: 2 }, tabActive: { backgroundColor: colors.accentSoft }, tabText: { color: colors.muted, fontFamily: font.extraBold, fontSize: 11 }, tabTextActive: { color: colors.accent }, badge: { position: 'absolute', top: 3, left: '58%', minWidth: 18, height: 18, paddingHorizontal: 5, borderRadius: 9, backgroundColor: colors.bad, alignItems: 'center', justifyContent: 'center' }, badgeText: { color: '#FFF', fontFamily: font.extraBold, fontSize: 10 }, fab: { width: 62, height: 62, borderRadius: 31, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center', ...shadow },
 });
