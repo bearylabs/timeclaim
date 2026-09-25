@@ -54,7 +54,7 @@ function seedEmployment(employment: Employment, year: number, month: number, sca
       : index % 6 === 3 ? patterns[3]
       : patterns[0];
     employment.days[key] = { start: pattern[0], end: pattern[1], pause: pattern[2], note: '', demo: true };
-    net += calculateDay(employment.days[key])?.net ?? 0;
+    net += calculateDay(key, employment.days[key])?.net ?? 0;
     if (scale === 1 && index === 8) addAllowance(key, 'Einspringen', 40);
     index += 1;
   }

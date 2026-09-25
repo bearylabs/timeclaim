@@ -46,4 +46,7 @@ export type DayCalculation = {
   pause: number;
   net: number;
   overnight: boolean;
+  dstAdjustment: number;
+  startAmbiguous: boolean;
+  endAmbiguous: boolean;
 };

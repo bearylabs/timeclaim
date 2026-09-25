@@ -25,6 +25,48 @@ test('work-day validation enforces clock ranges and pause below gross time', asy
   assert.match(workDayError('2025-01-01', { start: '08:00', end: '09:00', pause: 60, note: '' }), /kürzer/);
 });
 
+test('work intervals preserve ordinary and overnight wall-clock behavior', async () => {
+  const { getWorkInterval } = await validation;
+  assert.deepEqual(getWorkInterval('2025-02-10', '08:00', '16:30'), {
+    elapsed: 510, clockElapsed: 510, overnight: false,
+    startAmbiguous: false, endAmbiguous: false, dstAdjustment: 0,
+  });
+  assert.deepEqual(getWorkInterval('2025-02-10', '22:00', '06:00'), {
+    elapsed: 480, clockElapsed: 480, overnight: true,
+    startAmbiguous: false, endAmbiguous: false, dstAdjustment: 0,
+  });
+});
+
+test('work intervals use actually elapsed time across Berlin DST changes', async () => {
+  const { getWorkInterval } = await validation;
+  assert.equal(getWorkInterval('2025-03-30', '01:30', '03:30').elapsed, 60);
+  assert.equal(getWorkInterval('2025-03-29', '22:00', '06:00').elapsed, 420);
+  assert.equal(getWorkInterval('2025-10-26', '01:30', '03:30').elapsed, 180);
+  assert.equal(getWorkInterval('2025-10-25', '22:00', '06:00').elapsed, 540);
+});
+
+test('DST gaps are rejected with a comprehensible field error', async () => {
+  const { workDayError } = await validation;
+  assert.match(workDayError('2025-03-30', { start: '02:30', end: '04:00', pause: 0, note: '' }), /Beginn.*existiert.*Zeitumstellung/);
+  assert.match(workDayError('2025-03-29', { start: '22:00', end: '02:30', pause: 0, note: '' }), /Ende.*existiert.*Zeitumstellung/);
+});
+
+test('DST overlaps deterministically use first start and second end', async () => {
+  const { getWorkInterval } = await validation;
+  const bothAmbiguous = getWorkInterval('2025-10-26', '02:15', '02:45');
+  assert.equal(bothAmbiguous.elapsed, 90);
+  assert.equal(bothAmbiguous.startAmbiguous, true);
+  assert.equal(bothAmbiguous.endAmbiguous, true);
+  assert.equal(getWorkInterval('2025-10-26', '02:15', '03:15').elapsed, 120);
+  assert.equal(getWorkInterval('2025-10-26', '01:45', '02:15').elapsed, 90);
+});
+
+test('pause validation uses DST-correct gross time', async () => {
+  const { workDayError } = await validation;
+  assert.match(workDayError('2025-03-30', { start: '01:30', end: '03:30', pause: 60, note: '' }), /60 Minuten/);
+  assert.equal(workDayError('2025-10-26', { start: '01:30', end: '03:30', pause: 120, note: '' }), null);
+});
+
 test('allowance and billing inputs enforce bounds and precision', async () => {
   const { parseAmountInput, parseHoursInput, parseQuantityInput } = await validation;
   assert.match(parseQuantityInput('0').error, /größer als 0/);

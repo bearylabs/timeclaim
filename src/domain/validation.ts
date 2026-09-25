@@ -15,6 +15,89 @@ export const INPUT_LIMITS = {
 
 export type ParsedInput<T> = { value: T; error: null } | { value: null; error: string };
 
+export type WorkInterval = {
+  elapsed: number;
+  clockElapsed: number;
+  overnight: boolean;
+  startAmbiguous: boolean;
+  endAmbiguous: boolean;
+  dstAdjustment: number;
+};
+
+type LocalDateTime = { year: number; month: number; day: number; hour: number; minute: number };
+
+const WORK_TIME_ZONE = 'Europe/Berlin';
+const zonedPartsFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: WORK_TIME_ZONE,
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+});
+
+function zonedParts(timestamp: number): LocalDateTime & { second: number } {
+  const values: Record<string, number> = {};
+  for (const part of zonedPartsFormatter.formatToParts(new Date(timestamp))) {
+    if (part.type !== 'literal') values[part.type] = Number(part.value);
+  }
+  return { year: values.year, month: values.month, day: values.day, hour: values.hour, minute: values.minute, second: values.second };
+}
+
+function possibleInstants(local: LocalDateTime): number[] {
+  const localAsUtc = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute);
+  const offsets = new Set<number>();
+  for (const hours of [-36, -24, -12, 0, 12, 24, 36]) {
+    const sample = localAsUtc + hours * 60 * 60 * 1000;
+    const parts = zonedParts(sample);
+    offsets.add(Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - sample);
+  }
+  const instants: number[] = [];
+  for (const offset of offsets) {
+    const timestamp = localAsUtc - offset;
+    const parts = zonedParts(timestamp);
+    if (parts.year === local.year && parts.month === local.month && parts.day === local.day && parts.hour === local.hour && parts.minute === local.minute) {
+      instants.push(timestamp);
+    }
+  }
+  return [...new Set(instants)].sort((a, b) => a - b);
+}
+
+function nextCalendarDay(local: LocalDateTime): LocalDateTime {
+  const next = new Date(Date.UTC(local.year, local.month - 1, local.day + 1));
+  return { ...local, year: next.getUTCFullYear(), month: next.getUTCMonth() + 1, day: next.getUTCDate() };
+}
+
+function resolveWorkInterval(date: string, start: string, end: string): { interval: WorkInterval | null; error: string | null } {
+  const [year, month, day] = date.split('-').map(Number);
+  const startMinutes = timeToMinutes(start);
+  const endMinutes = timeToMinutes(end);
+  if (startMinutes === null || endMinutes === null || startMinutes === endMinutes) return { interval: null, error: null };
+  const overnight = endMinutes < startMinutes;
+  const startLocal: LocalDateTime = { year, month, day, hour: Math.floor(startMinutes / 60), minute: startMinutes % 60 };
+  let endLocal: LocalDateTime = { year, month, day, hour: Math.floor(endMinutes / 60), minute: endMinutes % 60 };
+  if (overnight) endLocal = nextCalendarDay(endLocal);
+  const starts = possibleInstants(startLocal);
+  const ends = possibleInstants(endLocal);
+  if (!starts.length) return { interval: null, error: 'Beginn: Diese lokale Uhrzeit existiert in Europe/Berlin wegen der Zeitumstellung nicht.' };
+  if (!ends.length) return { interval: null, error: 'Ende: Diese lokale Uhrzeit existiert in Europe/Berlin wegen der Zeitumstellung nicht.' };
+
+  // Bei doppelt vorkommenden Uhrzeiten umfasst das Intervall deterministisch die wiederholte Stunde:
+  // Beginn = erstes Auftreten, Ende = zweites Auftreten.
+  const elapsed = (ends.at(-1)! - starts[0]) / 60_000;
+  const clockElapsed = (endMinutes - startMinutes + 1440) % 1440;
+  return {
+    interval: {
+      elapsed, clockElapsed, overnight,
+      startAmbiguous: starts.length > 1,
+      endAmbiguous: ends.length > 1,
+      dstAdjustment: elapsed - clockElapsed,
+    },
+    error: null,
+  };
+}
+
+export function getWorkInterval(date: string, start: string, end: string): WorkInterval | null {
+  return resolveWorkInterval(date, start, end).interval;
+}
+
 const valid = <T>(value: T): ParsedInput<T> => ({ value, error: null });
 const invalid = <T>(error: string): ParsedInput<T> => ({ value: null, error });
 
@@ -112,8 +195,10 @@ export function workDayError(date: string, day: WorkDay): string | null {
   if (start === null) return 'Beginn: Bitte eine gültige Uhrzeit zwischen 00:00 und 23:59 eingeben.';
   if (end === null) return 'Ende: Bitte eine gültige Uhrzeit zwischen 00:00 und 23:59 eingeben.';
   if (start === end) return 'Arbeitszeit: Beginn und Ende müssen unterschiedlich sein.';
+  const resolved = resolveWorkInterval(date, day.start, day.end);
+  if (resolved.error) return resolved.error;
   if (!Number.isInteger(day.pause) || day.pause < 0) return 'Pause: Bitte eine ganze, nicht negative Minutenzahl eingeben.';
-  const gross = (end - start + 1440) % 1440;
+  const gross = resolved.interval!.elapsed;
   if (day.pause >= gross) return `Pause: Sie muss kürzer als die Bruttozeit von ${gross} Minuten sein.`;
   if (day.note.length > INPUT_LIMITS.note) return `Notiz: Maximal ${INPUT_LIMITS.note} Zeichen sind erlaubt.`;
   return null;
