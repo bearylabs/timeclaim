@@ -79,12 +79,18 @@ export function getDeviationCount(employment: Employment, info: MonthInfo) {
   return (hourResult.status === 'bad' ? 1 : 0) + labels.filter((label) => compareAllowance(info, label, billing.allowances[label]).status === 'bad').length;
 }
 
-export function ReconciliationView({ employment, info, onBillingChange, onOpenDay }: { employment: Employment; info: MonthInfo; onBillingChange: (billing: Employment['billing'][string]) => void; onOpenDay: (date: string) => void }) {
+export function ReconciliationView({ employment, info, onBillingChange, onOpenDay }: { employment: Employment; info: MonthInfo; onBillingChange: (billing: Employment['billing'][string]) => Promise<boolean>; onOpenDay: (date: string) => void }) {
   const existing = employment.billing[info.key] ?? { hours: '', allowances: {} };
   const [billing, setBilling] = useState(existing);
   const [newLabel, setNewLabel] = useState('');
   const labels = [...new Set([...MAIN_ALLOWANCES, ...info.allowances.map((item) => item.label), ...Object.keys(billing.allowances)])];
-  const set = (next: typeof billing) => { setBilling(next); onBillingChange(next); };
+  const set = (next: typeof billing) => {
+    const previous = billing;
+    setBilling(next);
+    void onBillingChange(next).then((saved) => {
+      if (!saved) setBilling((current) => current === next ? previous : current);
+    });
+  };
   const hourResult = compareValue(parseHours(billing.hours), info.net, 'Std');
   const results = labels.map((label) => compareAllowance(info, label, billing.allowances[label]));
   const deviations = (hourResult.status === 'bad' ? 1 : 0) + results.filter((item) => item.status === 'bad').length;

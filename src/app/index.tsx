@@ -19,10 +19,10 @@ type Sheet = { type: 'day'; date: string; presetWork: boolean } | { type: 'allow
 
 export default function HomeScreen() {
   const {
-    state, activeEmployment, setActiveEmployment, addEmployment, changeEmployment,
+    state, hydrated, activeEmployment, setActiveEmployment, addEmployment, changeEmployment,
     deleteEmployment, restoreEmployment, saveDay: persistDay, deleteDay: persistDeleteDay,
     restoreDay, saveAllowance: persistAllowance, deleteAllowance: persistDeleteAllowance,
-    restoreAllowance, saveBilling, replace, clearDemo, wipe: persistWipe, hasDemo,
+    restoreAllowance, saveBilling: persistBilling, replace, clearDemo, wipe: persistWipe, hasDemo,
   } = useAppStore();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -47,9 +47,18 @@ export default function HomeScreen() {
   const shiftMonth = (offset: number) => { const next = new Date(year, month + offset, 1); setYear(next.getFullYear()); setMonth(next.getMonth()); };
   const openDay = (date: string, presetWork = true) => setSheet({ type: 'day', date, presetWork });
 
-  const reportError = (reason: unknown) => notify(reason instanceof Error ? reason.message : 'Speichern nicht möglich.');
+  const reportError = (reason: unknown) => {
+    console.error('Persistent store operation failed.', reason);
+    notify(reason instanceof Error && reason.message ? reason.message : 'Die Änderung konnte nicht gespeichert werden.');
+  };
+  const isReady = () => {
+    if (hydrated) return true;
+    notify('Die Daten werden noch geladen. Bitte versuche es gleich noch einmal.');
+    return false;
+  };
 
   const saveDay = async (oldDate: string, newDate: string, work: WorkDay | null, managed: Record<MainAllowance, number | null | undefined>) => {
+    if (!isReady()) return false;
     if (newDate !== oldDate && work && activeEmployment.days[newDate]) { notify('Für dieses Datum gibt es schon einen Arbeitszeit-Eintrag.'); return false; }
     const previous = Object.fromEntries(MAIN_ALLOWANCES.map((label) => [label, activeEmployment.allowances.find((item) => item.date === oldDate && item.label === label)])) as Record<MainAllowance, Allowance | undefined>;
     const allowances = MAIN_ALLOWANCES.flatMap((label) => managed[label] === undefined ? [] : [{
@@ -69,16 +78,22 @@ export default function HomeScreen() {
   };
 
   const deleteDay = async (date: string) => {
+    if (!isReady()) return false;
     const oldWork = activeEmployment.days[date];
     const oldAllowances = activeEmployment.allowances.filter((item) => item.date === date);
     try {
       await persistDeleteDay(date);
-      notify('Eintrag gelöscht', 'Rückgängig', () => { void restoreDay(date, oldWork, oldAllowances).catch(reportError); });
-    } catch (reason) { reportError(reason); }
+      notify('Eintrag gelöscht', 'Rückgängig', () => {
+        if (!isReady()) return;
+        void restoreDay(date, oldWork, oldAllowances).catch(reportError);
+      });
+      return true;
+    } catch (reason) { reportError(reason); return false; }
   };
 
   const editingAllowance = sheet?.type === 'allowance' && sheet.id ? activeEmployment.allowances.find((item) => item.id === sheet.id) ?? null : null;
   const saveAllowance = async (allowance: Allowance) => {
+    if (!isReady()) return false;
     try {
       await persistAllowance(allowance);
       const date = parseDateKey(allowance.date); setYear(date.getFullYear()); setMonth(date.getMonth()); notify('Zulage gespeichert');
@@ -86,12 +101,33 @@ export default function HomeScreen() {
     } catch (reason) { reportError(reason); return false; }
   };
   const deleteAllowance = async (allowance: Allowance) => {
+    if (!isReady()) return false;
     try {
       await persistDeleteAllowance(allowance.id);
-      notify('Zulage gelöscht', 'Rückgängig', () => { void restoreAllowance(allowance).catch(reportError); });
-    } catch (reason) { reportError(reason); }
+      notify('Zulage gelöscht', 'Rückgängig', () => {
+        if (!isReady()) return;
+        void restoreAllowance(allowance).catch(reportError);
+      });
+      return true;
+    } catch (reason) { reportError(reason); return false; }
+  };
+  const saveBilling = async (billing: BillingRecord) => {
+    if (!isReady()) return false;
+    try { await persistBilling(info.key, billing); return true; }
+    catch (reason) { reportError(reason); return false; }
+  };
+  const selectEmployment = async (id: string) => {
+    if (!isReady() || id === state.activeEmploymentId) return;
+    try { await setActiveEmployment(id); }
+    catch (reason) { reportError(reason); }
+  };
+  const removeDemo = async () => {
+    if (!isReady()) return;
+    try { await clearDemo(); notify('Beispieldaten gelöscht'); }
+    catch (reason) { reportError(reason); }
   };
   const wipe = async () => {
+    if (!isReady()) return false;
     try { await persistWipe(); notify('Alle Daten gelöscht'); return true; }
     catch (reason) { reportError(reason); return false; }
   };
@@ -100,9 +136,9 @@ export default function HomeScreen() {
     <ScrollView automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'} contentContainerStyle={[styles.content, { paddingBottom: 112 + insets.bottom }]} keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       <View style={styles.top}><Text style={styles.title}>TimeClaim</Text><RoundButton icon="settings-outline" label="Einstellungen öffnen" onPress={() => setSheet({ type: 'settings' })} /></View>
       <View style={styles.monthBar}><RoundButton icon="chevron-back" label="Vorheriger Monat" onPress={() => shiftMonth(-1)} /><TouchableOpacity onPress={() => { setYear(now.getFullYear()); setMonth(now.getMonth()); }} style={styles.monthLabel}><Text style={styles.monthText}>{MONTHS[month]} {year}</Text>{year !== now.getFullYear() || month !== now.getMonth() ? <Text style={styles.todayHint}>Zum aktuellen Monat</Text> : null}</TouchableOpacity><RoundButton icon="chevron-forward" label="Nächster Monat" onPress={() => shiftMonth(1)} /></View>
-      <ScrollView contentContainerStyle={styles.jobContent} horizontal showsHorizontalScrollIndicator={false} style={styles.jobs}>{state.employments.map((employment) => { const active = employment.id === state.activeEmploymentId; const color = employmentColors[employment.color].main; return <TouchableOpacity key={employment.id} onPress={() => { void setActiveEmployment(employment.id).catch(reportError); }} style={[styles.jobChip, active && { backgroundColor: color }]}><View style={[styles.jobDot, { backgroundColor: active ? 'rgba(255,255,255,0.9)' : color }]} /><Text style={[styles.jobText, active && styles.jobTextActive]}>{employment.name}</Text></TouchableOpacity>})}</ScrollView>
-      {hasDemo ? <View style={styles.demo}><Text style={styles.demoText}>Beispieldaten – so sieht TimeClaim mit Einträgen aus.</Text><TouchableOpacity onPress={() => { void clearDemo().then(() => notify('Beispieldaten gelöscht')).catch(reportError); }}><Text style={styles.demoAction}>Beispieldaten löschen</Text></TouchableOpacity></View> : null}
-      {tab === 'days' ? <DaysView employment={activeEmployment} info={info} month={month} onOpenDay={openDay} /> : tab === 'allowances' ? <AllowancesView employment={activeEmployment} info={info} onOpen={(id) => setSheet({ type: 'allowance', id, date: defaultDate })} /> : <ReconciliationView employment={activeEmployment} info={info} key={`${activeEmployment.id}-${info.key}`} onBillingChange={(billing: BillingRecord) => { void saveBilling(info.key, billing).catch(reportError); }} onOpenDay={openDay} />}
+      <ScrollView contentContainerStyle={styles.jobContent} horizontal showsHorizontalScrollIndicator={false} style={styles.jobs}>{state.employments.map((employment) => { const active = employment.id === state.activeEmploymentId; const color = employmentColors[employment.color].main; return <TouchableOpacity key={employment.id} onPress={() => { void selectEmployment(employment.id); }} style={[styles.jobChip, active && { backgroundColor: color }]}><View style={[styles.jobDot, { backgroundColor: active ? 'rgba(255,255,255,0.9)' : color }]} /><Text style={[styles.jobText, active && styles.jobTextActive]}>{employment.name}</Text></TouchableOpacity>})}</ScrollView>
+      {hasDemo ? <View style={styles.demo}><Text style={styles.demoText}>Beispieldaten – so sieht TimeClaim mit Einträgen aus.</Text><TouchableOpacity onPress={() => { void removeDemo(); }}><Text style={styles.demoAction}>Beispieldaten löschen</Text></TouchableOpacity></View> : null}
+      {tab === 'days' ? <DaysView employment={activeEmployment} info={info} month={month} onOpenDay={openDay} /> : tab === 'allowances' ? <AllowancesView employment={activeEmployment} info={info} onOpen={(id) => setSheet({ type: 'allowance', id, date: defaultDate })} /> : <ReconciliationView employment={activeEmployment} info={info} key={`${activeEmployment.id}-${info.key}`} onBillingChange={saveBilling} onOpenDay={openDay} />}
     </ScrollView>
 
     <View style={[styles.dock, { bottom: 12 + insets.bottom }]}><View style={styles.nav}>{([['days', 'calendar-outline', 'Tage'], ['allowances', 'add-circle-outline', 'Zulagen'], ['reconciliation', 'git-compare-outline', 'Abgleich']] as const).map(([key, icon, label]) => <TouchableOpacity accessibilityRole="tab" key={key} onPress={() => setTab(key)} style={[styles.tab, tab === key && styles.tabActive]}><Ionicons color={tab === key ? colors.accent : colors.muted} name={icon} size={22} />{key === 'reconciliation' && deviationCount ? <View style={styles.badge}><Text style={styles.badgeText}>{deviationCount}</Text></View> : null}<Text style={[styles.tabText, tab === key && styles.tabTextActive]}>{label}</Text></TouchableOpacity>)}</View><TouchableOpacity accessibilityLabel="Neuer Eintrag" onPress={() => openDay(defaultDate, tab === 'days')} style={[styles.fab, { backgroundColor: employmentColors[activeEmployment.color].main }]}><Ionicons color="#FFF" name="add" size={28} /></TouchableOpacity></View>
@@ -111,10 +147,27 @@ export default function HomeScreen() {
     {sheet?.type === 'allowance' ? <AllowanceSheet initial={editingAllowance} initialDate={sheet.date} key={`allowance-${sheet.id ?? 'new'}-${sheet.date}`} labels={allLabels} onClose={() => setSheet(null)} onDelete={deleteAllowance} onSave={saveAllowance} visible /> : null}
     <SettingsMenu onClose={() => setSheet(null)} onOpenExport={() => setSheet({ type: 'backup' })} onOpenJobs={() => setSheet({ type: 'jobs' })} visible={sheet?.type === 'settings'} />
     <JobsSheet
-      onAdd={() => { const used = new Set(state.employments.map((item) => item.color)); const color = [0, 1, 2, 3].find((item) => !used.has(item)) ?? 0; void addEmployment('Neuer Job', color).catch(reportError); }}
-      onChange={(id, patch) => { void changeEmployment(id, patch).catch(reportError); }}
+      onAdd={() => {
+        if (!isReady()) return;
+        const used = new Set(state.employments.map((item) => item.color));
+        const color = [0, 1, 2, 3].find((item) => !used.has(item)) ?? 0;
+        void addEmployment('Neuer Job', color).catch(reportError);
+      }}
+      onChange={(id, patch) => {
+        if (!isReady()) return;
+        void changeEmployment(id, patch).catch(reportError);
+      }}
       onClose={() => setSheet(null)}
-      onDelete={(id) => { const removed = state.employments.find((item) => item.id === id)!; const wasActive = id === state.activeEmploymentId; void deleteEmployment(id).then(() => notify(`„${removed.name}“ gelöscht`, 'Rückgängig', () => { void restoreEmployment(removed, wasActive).catch(reportError); })).catch(reportError); }}
+      onDelete={(id) => {
+        if (!isReady()) return;
+        const removed = state.employments.find((item) => item.id === id);
+        if (!removed) { notify('Das Arbeitsverhältnis wurde nicht gefunden.'); return; }
+        const wasActive = id === state.activeEmploymentId;
+        void deleteEmployment(id).then(() => notify(`„${removed.name}“ gelöscht`, 'Rückgängig', () => {
+          if (!isReady()) return;
+          void restoreEmployment(removed, wasActive).catch(reportError);
+        })).catch(reportError);
+      }}
       state={state}
       visible={sheet?.type === 'jobs'}
     />

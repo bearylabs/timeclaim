@@ -13,7 +13,7 @@ type Props = {
   presetWork: boolean;
   onClose: () => void;
   onSave: (oldDate: string, date: string, work: WorkDay | null, allowances: Record<MainAllowance, number | null | undefined>) => Promise<boolean>;
-  onDelete: (date: string) => void;
+  onDelete: (date: string) => Promise<boolean>;
   onOtherAllowance: (date: string) => void;
   onEditAllowance: (id: string) => void;
 };
@@ -37,19 +37,36 @@ export function DaySheet({ visible, date: initialDate, employment, presetWork, o
     Bereitschaft: managed.Bereitschaft?.amount?.toString().replace('.', ',') ?? '',
     Einspringen: managed.Einspringen?.amount?.toString().replace('.', ',') ?? '',
   });
+  const [saving, setSaving] = useState(false);
   const calculation = useMemo(() => calculateDay({ start, end, pause: Number(pause) }), [start, end, pause]);
 
   const toggle = (key: keyof typeof toggles) => setToggles((value) => ({ ...value, [key]: !value[key] }));
   const save = async (closeAfter = true) => {
+    if (saving) return false;
     if (!date) { Alert.alert('Datum wählen'); return false; }
     if (!toggles.work && !toggles.Bereitschaft && !toggles.Einspringen) { Alert.alert('Auswahl fehlt', 'Wähle Arbeitszeit, Bereitschaft oder Einspringen.'); return false; }
     if (toggles.work && !calculation) { Alert.alert('Ungültige Zeit', 'Beginn und Ende müssen unterschiedlich sein.'); return false; }
-    const ok = await onSave(initialDate, date, toggles.work ? { start, end, pause: Math.max(0, Math.round(Number(pause) || 0)), note: note.trim() } : null, {
-      Bereitschaft: toggles.Bereitschaft ? parseNumber(amounts.Bereitschaft) : undefined,
-      Einspringen: toggles.Einspringen ? parseNumber(amounts.Einspringen) : undefined,
-    });
-    if (ok && closeAfter) onClose();
-    return ok;
+    setSaving(true);
+    try {
+      const ok = await onSave(initialDate, date, toggles.work ? { start, end, pause: Math.max(0, Math.round(Number(pause) || 0)), note: note.trim() } : null, {
+        Bereitschaft: toggles.Bereitschaft ? parseNumber(amounts.Bereitschaft) : undefined,
+        Einspringen: toggles.Einspringen ? parseNumber(amounts.Einspringen) : undefined,
+      });
+      if (ok && closeAfter) onClose();
+      return ok;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      if (await onDelete(initialDate)) onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
   return <BottomSheet onClose={onClose} title={hasAnything ? 'Eintrag bearbeiten' : 'Neuer Eintrag'} visible={visible}>
@@ -78,7 +95,7 @@ export function DaySheet({ visible, date: initialDate, employment, presetWork, o
     </View> : null}
     {MAIN_ALLOWANCES.map((label) => toggles[label] ? <View key={label} style={[styles.allowanceBox, label === 'Bereitschaft' ? styles.tealBox : styles.violetBox]}><Field label={`${label} · Betrag in € (optional)`}><TextInput keyboardType="decimal-pad" onChangeText={(value) => setAmounts((current) => ({ ...current, [label]: value }))} placeholder="0,00" style={[styles.input, styles.whiteInput]} value={amounts[label]} /></Field></View> : null)}
     {otherAllowances.length ? <View style={styles.otherSection}><Text style={styles.label}>Weitere Zulagen an diesem Tag</Text>{otherAllowances.map((allowance) => <TouchableOpacity key={allowance.id} onPress={() => onEditAllowance(allowance.id)} style={styles.otherRow}><Text style={styles.otherLabel}>{allowance.label}</Text><Text style={styles.otherAmount}>{allowance.quantity}×{allowance.amount !== null ? ` · ${allowance.amount.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}` : ''}</Text></TouchableOpacity>)}</View> : null}
-    <View style={styles.actions}><Button onPress={() => { void save(); }}>Speichern</Button><Button kind="soft" onPress={() => { const open = async () => { const hasSelection = toggles.work || toggles.Bereitschaft || toggles.Einspringen; if (!hasSelection || await save(false)) onOtherAllowance(date); }; void open(); }}>＋ Andere Zulage</Button>{hasAnything ? <Button kind="danger" onPress={() => Alert.alert('Alles löschen?', 'Arbeitszeit und Zulagen dieses Tages werden gelöscht.', [{ text: 'Abbrechen' }, { text: 'Löschen', style: 'destructive', onPress: () => { onDelete(initialDate); onClose(); } }])}>Alles an diesem Tag löschen</Button> : null}</View>
+    <View style={styles.actions}><Button disabled={saving} onPress={() => { void save(); }}>Speichern</Button><Button disabled={saving} kind="soft" onPress={() => { const open = async () => { const hasSelection = toggles.work || toggles.Bereitschaft || toggles.Einspringen; if (!hasSelection || await save(false)) onOtherAllowance(date); }; void open(); }}>＋ Andere Zulage</Button>{hasAnything ? <Button disabled={saving} kind="danger" onPress={() => Alert.alert('Alles löschen?', 'Arbeitszeit und Zulagen dieses Tages werden gelöscht.', [{ text: 'Abbrechen' }, { text: 'Löschen', style: 'destructive', onPress: () => { void remove(); } }])}>Alles an diesem Tag löschen</Button> : null}</View>
   </BottomSheet>;
 }
 
