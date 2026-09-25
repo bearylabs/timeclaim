@@ -12,18 +12,19 @@ type Props = {
   date: string;
   employment: Employment;
   presetWork: boolean;
+  createNew?: boolean;
   onClose: () => void;
-  onSave: (oldDate: string, date: string, work: WorkDay | null, allowances: Record<MainAllowance, number | null | undefined>) => Promise<boolean>;
+  onSave: (oldDate: string, date: string, work: WorkDay | null, allowances: Record<MainAllowance, number | null | undefined>, creating: boolean) => Promise<boolean>;
   onDelete: (date: string) => Promise<boolean>;
   onOtherAllowance: (date: string) => void;
   onEditAllowance: (id: string) => void;
 };
 
-export function DaySheet({ visible, date: initialDate, employment, presetWork, onClose, onSave, onDelete, onOtherAllowance, onEditAllowance }: Props) {
-  const existing = employment.days[initialDate];
-  const managed = Object.fromEntries(MAIN_ALLOWANCES.map((label) => [label, employment.allowances.find((item) => item.date === initialDate && item.label === label)])) as Record<MainAllowance, ReturnType<typeof employment.allowances.find>>;
-  const otherAllowances = employment.allowances.filter((item) => item.date === initialDate && !MAIN_ALLOWANCES.includes(item.label as MainAllowance));
-  const hasAnything = Boolean(existing) || employment.allowances.some((item) => item.date === initialDate);
+export function DaySheet({ visible, date: initialDate, employment, presetWork, createNew = false, onClose, onSave, onDelete, onOtherAllowance, onEditAllowance }: Props) {
+  const existing = createNew ? undefined : employment.days[initialDate];
+  const managed = Object.fromEntries(MAIN_ALLOWANCES.map((label) => [label, createNew ? undefined : employment.allowances.find((item) => item.date === initialDate && item.label === label)])) as Record<MainAllowance, ReturnType<typeof employment.allowances.find>>;
+  const otherAllowances = createNew ? [] : employment.allowances.filter((item) => item.date === initialDate && !MAIN_ALLOWANCES.includes(item.label as MainAllowance));
+  const hasAnything = !createNew && (Boolean(existing) || employment.allowances.some((item) => item.date === initialDate));
   const previous = Object.entries(employment.days).sort(([a], [b]) => b.localeCompare(a)).find(([key]) => key !== initialDate)?.[1];
   const [date, setDate] = useState(initialDate);
   const [toggles, setToggles] = useState<Record<'work' | MainAllowance, boolean>>({
@@ -66,7 +67,7 @@ export function DaySheet({ visible, date: initialDate, employment, presetWork, o
       const ok = await onSave(initialDate, date, work, {
         Bereitschaft: toggles.Bereitschaft ? parsedAmounts.Bereitschaft.value : undefined,
         Einspringen: toggles.Einspringen ? parsedAmounts.Einspringen.value : undefined,
-      });
+      }, createNew);
       if (ok && closeAfter) onClose();
       return ok;
     } finally {

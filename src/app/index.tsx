@@ -15,7 +15,7 @@ import { MAIN_ALLOWANCES, type Allowance, type BillingRecord, type MainAllowance
 import { dateKey, monthKey, MONTHS, parseDateKey } from '@/domain/time';
 
 type Tab = 'days' | 'allowances' | 'reconciliation';
-type Sheet = { type: 'day'; date: string; presetWork: boolean } | { type: 'allowance'; id: string | null; date: string } | { type: 'settings' } | { type: 'jobs' } | { type: 'backup' } | null;
+type Sheet = { type: 'day'; date: string; presetWork: boolean; creating: boolean } | { type: 'allowance'; id: string | null; date: string } | { type: 'settings' } | { type: 'jobs' } | { type: 'backup' } | null;
 
 export default function HomeScreen() {
   const {
@@ -53,7 +53,7 @@ export default function HomeScreen() {
 
   const notify = (message: string, action?: string, run?: () => Promise<void>) => setToast({ message, action, run });
   const shiftMonth = (offset: number) => { const next = new Date(year, month + offset, 1); setYear(next.getFullYear()); setMonth(next.getMonth()); };
-  const openDay = (date: string, presetWork = true) => setSheet({ type: 'day', date, presetWork });
+  const openDay = (date: string, presetWork = true) => setSheet({ type: 'day', date, presetWork, creating: false });
 
   const reportError = (reason: unknown) => {
     console.error('Persistent store operation failed.', reason);
@@ -62,9 +62,10 @@ export default function HomeScreen() {
       : 'Die Änderung konnte nicht gespeichert werden. Bitte versuche es erneut.';
     notify(message);
   };
-  const saveDay = async (oldDate: string, newDate: string, work: WorkDay | null, managed: Record<MainAllowance, number | null | undefined>) => {
-    if (newDate !== oldDate && work && activeEmployment.days[newDate]) { notify('Für dieses Datum gibt es schon einen Arbeitszeit-Eintrag.'); return false; }
-    const previous = Object.fromEntries(MAIN_ALLOWANCES.map((label) => [label, activeEmployment.allowances.find((item) => item.date === oldDate && item.label === label)])) as Record<MainAllowance, Allowance | undefined>;
+  const saveDay = async (oldDate: string, newDate: string, work: WorkDay | null, managed: Record<MainAllowance, number | null | undefined>, creating: boolean) => {
+    const targetOccupied = Boolean(activeEmployment.days[newDate]) || activeEmployment.allowances.some((item) => item.date === newDate);
+    if ((creating && targetOccupied) || (!creating && newDate !== oldDate && targetOccupied)) { notify('Für dieses Datum gibt es schon einen Eintrag.'); return false; }
+    const previous = Object.fromEntries(MAIN_ALLOWANCES.map((label) => [label, creating ? undefined : activeEmployment.allowances.find((item) => item.date === oldDate && item.label === label)])) as Record<MainAllowance, Allowance | undefined>;
     const allowances = MAIN_ALLOWANCES.flatMap((label) => managed[label] === undefined ? [] : [{
       id: previous[label]?.id ?? `${Date.now()}-${label}`,
       date: newDate,
@@ -73,7 +74,7 @@ export default function HomeScreen() {
       amount: managed[label] ?? null,
     }]);
     try {
-      await persistDay(oldDate, newDate, work, allowances);
+      await persistDay(creating ? newDate : oldDate, newDate, work, allowances);
       const moved = parseDateKey(newDate);
       if (monthKey(moved.getFullYear(), moved.getMonth()) !== monthKey(year, month)) { setYear(moved.getFullYear()); setMonth(moved.getMonth()); }
       notify('Gespeichert');
@@ -167,9 +168,9 @@ export default function HomeScreen() {
       {tab === 'days' ? <DaysView employment={activeEmployment} info={info} month={month} onOpenDay={openDay} /> : tab === 'allowances' ? <AllowancesView employment={activeEmployment} info={info} onOpen={(id) => setSheet({ type: 'allowance', id, date: defaultDate })} /> : <ReconciliationView employment={activeEmployment} info={info} key={`${activeEmployment.id}-${info.key}`} onBillingChange={saveBilling} onOpenDay={openDay} />}
     </ScrollView>
 
-    <View style={[styles.dock, { bottom: 12 + insets.bottom }]}><View style={styles.nav}>{([['days', 'calendar-outline', 'Tage'], ['allowances', 'add-circle-outline', 'Zulagen'], ['reconciliation', 'git-compare-outline', 'Abgleich']] as const).map(([key, icon, label]) => <TouchableOpacity accessibilityRole="tab" key={key} onPress={() => setTab(key)} style={[styles.tab, tab === key && styles.tabActive]}><Ionicons color={tab === key ? colors.accent : colors.muted} name={icon} size={22} />{key === 'reconciliation' && deviationCount ? <View style={styles.badge}><Text style={styles.badgeText}>{deviationCount}</Text></View> : null}<Text style={[styles.tabText, tab === key && styles.tabTextActive]}>{label}</Text></TouchableOpacity>)}</View><TouchableOpacity accessibilityLabel="Neuer Eintrag" onPress={() => openDay(defaultDate, tab === 'days')} style={[styles.fab, { backgroundColor: employmentColors[activeEmployment.color].main }]}><Ionicons color="#FFF" name="add" size={28} /></TouchableOpacity></View>
+    <View style={[styles.dock, { bottom: 12 + insets.bottom }]}><View style={styles.nav}>{([['days', 'calendar-outline', 'Tage'], ['allowances', 'add-circle-outline', 'Zulagen'], ['reconciliation', 'git-compare-outline', 'Abgleich']] as const).map(([key, icon, label]) => <TouchableOpacity accessibilityRole="tab" key={key} onPress={() => setTab(key)} style={[styles.tab, tab === key && styles.tabActive]}><Ionicons color={tab === key ? colors.accent : colors.muted} name={icon} size={22} />{key === 'reconciliation' && deviationCount ? <View style={styles.badge}><Text style={styles.badgeText}>{deviationCount}</Text></View> : null}<Text style={[styles.tabText, tab === key && styles.tabTextActive]}>{label}</Text></TouchableOpacity>)}</View><TouchableOpacity accessibilityLabel="Neuer Eintrag" onPress={() => setSheet({ type: 'day', date: defaultDate, presetWork: tab === 'days', creating: true })} style={[styles.fab, { backgroundColor: employmentColors[activeEmployment.color].main }]}><Ionicons color="#FFF" name="add" size={28} /></TouchableOpacity></View>
 
-    {sheet?.type === 'day' ? <DaySheet date={sheet.date} employment={activeEmployment} key={`day-${sheet.date}-${activeEmployment.id}`} onClose={() => setSheet(null)} onDelete={deleteDay} onEditAllowance={(id) => setSheet({ type: 'allowance', id, date: sheet.date })} onOtherAllowance={(date) => setSheet({ type: 'allowance', id: null, date })} onSave={saveDay} presetWork={sheet.presetWork} visible /> : null}
+    {sheet?.type === 'day' ? <DaySheet createNew={sheet.creating} date={sheet.date} employment={activeEmployment} key={`day-${sheet.date}-${sheet.creating ? 'new' : 'edit'}-${activeEmployment.id}`} onClose={() => setSheet(null)} onDelete={deleteDay} onEditAllowance={(id) => setSheet({ type: 'allowance', id, date: sheet.date })} onOtherAllowance={(date) => setSheet({ type: 'allowance', id: null, date })} onSave={saveDay} presetWork={sheet.presetWork} visible /> : null}
     {sheet?.type === 'allowance' ? <AllowanceSheet initial={editingAllowance} initialDate={sheet.date} key={`allowance-${sheet.id ?? 'new'}-${sheet.date}`} labels={allLabels} onClose={() => setSheet(null)} onDelete={deleteAllowance} onSave={saveAllowance} visible /> : null}
     <BottomSheet closeIcon={sheet?.type === 'settings' ? 'close' : 'back'} dismissible={!settingsBusy} onClose={() => { setSettingsBusy(false); setSheet(sheet?.type === 'settings' ? null : { type: 'settings' }); }} title={sheet?.type === 'jobs' ? 'Arbeitsverhältnisse' : sheet?.type === 'backup' ? 'Daten sichern' : 'Einstellungen'} visible={sheet?.type === 'settings' || sheet?.type === 'jobs' || sheet?.type === 'backup'}>
     <SettingsMenu inline onClose={() => setSheet(null)} onOpenExport={() => setSheet({ type: 'backup' })} onOpenJobs={() => setSheet({ type: 'jobs' })} visible={sheet?.type === 'settings'} />
