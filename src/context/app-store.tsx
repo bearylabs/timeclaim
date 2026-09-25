@@ -1,9 +1,8 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, type PropsWithChildren, useContext, useEffect, useState } from 'react';
+import { getDatabase } from '@/database/database';
 import type { Allowance, AppState, Employment } from '@/domain/model';
 import { calculateDay, dateKey, formatDecimal, monthKey } from '@/domain/time';
 
-const STORAGE_KEY = 'stundenbuch-v2';
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
 export function newEmployment(name = 'Hauptjob', color = 0): Employment {
@@ -116,19 +115,16 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
-      if (raw) {
-        try {
-          const normalized = normalizeState(JSON.parse(raw));
-          if (normalized) setState(normalized);
-        } catch { /* keep demo state */ }
-      }
-    }).finally(() => setHydrated(true));
+    let mounted = true;
+    getDatabase()
+      .then(() => {
+        if (mounted) setHydrated(true);
+      })
+      .catch((error: unknown) => {
+        console.error('SQLite database could not be opened.', error);
+      });
+    return () => { mounted = false; };
   }, []);
-
-  useEffect(() => {
-    if (hydrated) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [hydrated, state]);
 
   const update = (recipe: (draft: AppState) => void) => {
     setState((current) => {
