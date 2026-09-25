@@ -56,7 +56,7 @@ export default function HomeScreen() {
 
   const reportError = (reason: unknown) => {
     console.error('Persistent store operation failed.', reason);
-    const message = reason instanceof Error && /^(Das|Der|Die|Ungültige|„)/.test(reason.message)
+    const message = reason instanceof Error && /^(Das|Der|Die|Ungültige|„|Arbeits|Beginn|Ende|Pause|Datum|Bisheriges|Neues|Zulage|Anzahl|Betrag|Abrechnung|Bezeichnung)/.test(reason.message)
       ? reason.message
       : 'Die Änderung konnte nicht gespeichert werden. Bitte versuche es erneut.';
     notify(message);
