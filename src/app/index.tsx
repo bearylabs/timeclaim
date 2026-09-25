@@ -8,7 +8,7 @@ import { DaySheet } from '@/components/day-sheet';
 import { JobsSheet } from '@/components/jobs-sheet';
 import { AllowancesView, DaysView, getDeviationCount, getMonthInfo, ReconciliationView } from '@/components/month-views';
 import { SettingsMenu } from '@/components/settings-menu';
-import { RoundButton, Toast } from '@/components/primitives';
+import { BottomSheet, ModalOverlayProvider, RoundButton, Toast } from '@/components/primitives';
 import { colors, employmentColors, font, shadow } from '@/constants/theme';
 import { useAppStore } from '@/context/app-store';
 import { MAIN_ALLOWANCES, type Allowance, type BillingRecord, type MainAllowance, type WorkDay } from '@/domain/model';
@@ -34,6 +34,7 @@ export default function HomeScreen() {
   const [toastActionRunning, setToastActionRunning] = useState(false);
   const [selectingEmployment, setSelectingEmployment] = useState(false);
   const [removingDemo, setRemovingDemo] = useState(false);
+  const [settingsBusy, setSettingsBusy] = useState(false);
   const selectingEmploymentRef = useRef(false);
   const removingDemoRef = useRef(false);
   const toastActionRunningRef = useRef(false);
@@ -156,9 +157,10 @@ export default function HomeScreen() {
     finally { toastActionRunningRef.current = false; setToastActionRunning(false); }
   };
 
-  return <SafeAreaView edges={['top']} style={styles.safe}>
+  return <ModalOverlayProvider overlay={<Toast action={toast?.action} actionDisabled={toastActionRunning} message={toast?.message ?? null} onAction={() => { void runToastAction(); }} />}>
+  <SafeAreaView edges={['top']} style={styles.safe}>
     <ScrollView automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'} contentContainerStyle={[styles.content, { paddingBottom: 112 + insets.bottom }]} keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-      <View style={styles.top}><Text style={styles.title}>TimeClaim</Text><RoundButton icon="settings-outline" label="Einstellungen öffnen" onPress={() => setSheet({ type: 'settings' })} /></View>
+      <View style={styles.top}><Text style={styles.title}>TimeClaim</Text><RoundButton icon="settings-outline" label="Einstellungen öffnen" onPress={() => { setSettingsBusy(false); setSheet({ type: 'settings' }); }} /></View>
       <View style={styles.monthBar}><RoundButton icon="chevron-back" label="Vorheriger Monat" onPress={() => shiftMonth(-1)} /><TouchableOpacity onPress={() => { setYear(now.getFullYear()); setMonth(now.getMonth()); }} style={styles.monthLabel}><Text style={styles.monthText}>{MONTHS[month]} {year}</Text>{year !== now.getFullYear() || month !== now.getMonth() ? <Text style={styles.todayHint}>Zum aktuellen Monat</Text> : null}</TouchableOpacity><RoundButton icon="chevron-forward" label="Nächster Monat" onPress={() => shiftMonth(1)} /></View>
       <ScrollView contentContainerStyle={styles.jobContent} horizontal showsHorizontalScrollIndicator={false} style={styles.jobs}>{state.employments.map((employment) => { const active = employment.id === state.activeEmploymentId; const color = employmentColors[employment.color].main; return <TouchableOpacity disabled={selectingEmployment} key={employment.id} onPress={() => { void selectEmployment(employment.id); }} style={[styles.jobChip, active && { backgroundColor: color }, selectingEmployment && styles.disabled]}><View style={[styles.jobDot, { backgroundColor: active ? 'rgba(255,255,255,0.9)' : color }]} /><Text style={[styles.jobText, active && styles.jobTextActive]}>{employment.name}</Text></TouchableOpacity>})}</ScrollView>
       {hasDemo ? <View style={styles.demo}><Text style={styles.demoText}>Beispieldaten – so sieht TimeClaim mit Einträgen aus.</Text><TouchableOpacity disabled={removingDemo} onPress={() => { void removeDemo(); }} style={removingDemo && styles.disabled}><Text style={styles.demoAction}>Beispieldaten löschen</Text></TouchableOpacity></View> : null}
@@ -169,8 +171,11 @@ export default function HomeScreen() {
 
     {sheet?.type === 'day' ? <DaySheet date={sheet.date} employment={activeEmployment} key={`day-${sheet.date}-${activeEmployment.id}`} onClose={() => setSheet(null)} onDelete={deleteDay} onEditAllowance={(id) => setSheet({ type: 'allowance', id, date: sheet.date })} onOtherAllowance={(date) => setSheet({ type: 'allowance', id: null, date })} onSave={saveDay} presetWork={sheet.presetWork} visible /> : null}
     {sheet?.type === 'allowance' ? <AllowanceSheet initial={editingAllowance} initialDate={sheet.date} key={`allowance-${sheet.id ?? 'new'}-${sheet.date}`} labels={allLabels} onClose={() => setSheet(null)} onDelete={deleteAllowance} onSave={saveAllowance} visible /> : null}
-    <SettingsMenu onClose={() => setSheet(null)} onOpenExport={() => setSheet({ type: 'backup' })} onOpenJobs={() => setSheet({ type: 'jobs' })} visible={sheet?.type === 'settings'} />
+    <BottomSheet closeIcon={sheet?.type === 'settings' ? 'close' : 'back'} dismissible={!settingsBusy} onClose={() => { setSettingsBusy(false); setSheet(sheet?.type === 'settings' ? null : { type: 'settings' }); }} title={sheet?.type === 'jobs' ? 'Arbeitsverhältnisse' : sheet?.type === 'backup' ? 'Daten sichern' : 'Einstellungen'} visible={sheet?.type === 'settings' || sheet?.type === 'jobs' || sheet?.type === 'backup'}>
+    <SettingsMenu inline onClose={() => setSheet(null)} onOpenExport={() => setSheet({ type: 'backup' })} onOpenJobs={() => setSheet({ type: 'jobs' })} visible={sheet?.type === 'settings'} />
     <JobsSheet
+      inline
+      onBusyChange={setSettingsBusy}
       onAdd={async () => {
         const used = new Set(state.employments.map((item) => item.color));
         const color = [0, 1, 2, 3].find((item) => !used.has(item)) ?? 0;
@@ -184,7 +189,7 @@ export default function HomeScreen() {
         try { await changeEmployment(id, patch); return true; }
         catch (reason) { reportError(reason); return false; }
       }}
-      onClose={() => setSheet(null)}
+      onClose={() => { setSettingsBusy(false); setSheet({ type: 'settings' }); }}
       onDelete={async (id) => {
         const removed = state.employments.find((item) => item.id === id);
         if (!removed) { notify('Das Arbeitsverhältnis wurde nicht gefunden.'); return false; }
@@ -203,9 +208,11 @@ export default function HomeScreen() {
       state={state}
       visible={sheet?.type === 'jobs'}
     />
-    {sheet?.type === 'backup' ? <BackupSheet key="backup" onClose={() => setSheet(null)} onLoadBackup={loadBackupState} onRestore={restoreBackup} onToast={notify} onWipe={wipe} visible /> : null}
+    {sheet?.type === 'backup' ? <BackupSheet inline key="backup" onBusyChange={setSettingsBusy} onClose={() => { setSettingsBusy(false); setSheet({ type: 'settings' }); }} onLoadBackup={loadBackupState} onRestore={restoreBackup} onToast={notify} onWipe={wipe} visible /> : null}
+    </BottomSheet>
     <Toast action={toast?.action} actionDisabled={toastActionRunning} message={toast?.message ?? null} onAction={() => { void runToastAction(); }} />
-  </SafeAreaView>;
+  </SafeAreaView>
+  </ModalOverlayProvider>;
 }
 
 const styles = StyleSheet.create({

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import DateTimePicker, { type DateTimePickerChangeEvent } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, font, shadow } from '@/constants/theme';
 import { dateKey, pad } from '@/domain/time';
@@ -51,12 +51,12 @@ export function NativeDateTimeField({ mode, value, onChange }: Props) {
     setDraft(valueAsDate(value, mode));
     setVisible(true);
   };
-  const changed = (_event: DateTimePickerEvent, selected?: Date) => {
+  const changed = (_event: DateTimePickerChangeEvent, selected: Date) => {
     if (Platform.OS === 'android') setVisible(false);
-    if (!selected) return;
     setDraft(selected);
     if (Platform.OS === 'android') onChange(outputValue(selected, mode));
   };
+  const dismissed = () => setVisible(false);
 
   return <>
     <TouchableOpacity accessibilityLabel={label} accessibilityRole="button" activeOpacity={0.7} onPress={open} style={[styles.field, mode === 'time' && styles.timeField]}>
@@ -65,7 +65,7 @@ export function NativeDateTimeField({ mode, value, onChange }: Props) {
       <Ionicons color={colors.muted} name="chevron-down" size={17} />
     </TouchableOpacity>
 
-    {visible && Platform.OS === 'android' ? <DateTimePicker display="default" is24Hour locale="de-DE" mode={mode} onChange={changed} value={draft} /> : null}
+    {visible && Platform.OS === 'android' ? <DateTimePicker display="default" is24Hour locale="de-DE" mode={mode} onDismiss={dismissed} onValueChange={changed} value={draft} /> : null}
 
     {Platform.OS === 'ios' ? <Modal animationType="fade" onRequestClose={() => setVisible(false)} transparent visible={visible}>
       <View style={styles.backdrop}>
@@ -76,7 +76,7 @@ export function NativeDateTimeField({ mode, value, onChange }: Props) {
             <Text style={styles.title}>{mode === 'date' ? 'Datum' : 'Uhrzeit'}</Text>
             <TouchableOpacity onPress={() => { onChange(outputValue(draft, mode)); setVisible(false); }} style={styles.action}><Text style={styles.done}>Fertig</Text></TouchableOpacity>
           </View>
-          <DateTimePicker display="spinner" is24Hour locale="de-DE" mode={mode} onChange={changed} themeVariant="light" value={draft} />
+          <DateTimePicker display="spinner" is24Hour locale="de-DE" mode={mode} onDismiss={dismissed} onValueChange={changed} themeVariant="light" value={draft} />
         </View>
       </View>
     </Modal> : null}

@@ -4,7 +4,7 @@ import { BottomSheet, Button } from './primitives';
 import { NativeDateTimeField } from './native-date-time-field';
 import { colors, font } from '@/constants/theme';
 import { MAIN_ALLOWANCES, type Employment, type MainAllowance, type WorkDay } from '@/domain/model';
-import { calculateDay, formatDecimal, formatHours } from '@/domain/time';
+import { calculateDay, formatHours } from '@/domain/time';
 import { calendarDateError, INPUT_LIMITS, parseAmountInput, workDayError } from '@/domain/validation';
 
 type Props = {
@@ -87,7 +87,7 @@ export function DaySheet({ visible, date: initialDate, employment, presetWork, o
     }
   };
 
-  return <BottomSheet onClose={saving ? () => undefined : onClose} title={hasAnything ? 'Eintrag bearbeiten' : 'Neuer Eintrag'} visible={visible}>
+  return <BottomSheet dismissible={!saving} onClose={onClose} title={hasAnything ? 'Eintrag bearbeiten' : 'Neuer Eintrag'} visible={visible}>
     <Field label="Datum"><NativeDateTimeField mode="date" onChange={setDate} value={date} /></Field>
     <Field label="Was war an diesem Tag?">
       <View style={styles.toggles}>
@@ -103,7 +103,7 @@ export function DaySheet({ visible, date: initialDate, employment, presetWork, o
         <View style={styles.customPause}><Text style={styles.muted}>oder eigene Dauer in Minuten</Text><TextInput keyboardType="number-pad" maxLength={4} onChangeText={setPause} style={[styles.input, styles.pauseInput]} value={pause} /></View>
       </Field>
       <View style={styles.calculation}>{calculation ? <>
-        <View style={styles.calcMain}><Text style={styles.calcValue}>{formatHours(calculation.net)} Std</Text><Text style={styles.muted}>netto · {formatDecimal(calculation.net)} dezimal</Text></View>
+        <View style={styles.calcMain}><Text style={styles.calcValue}>{formatHours(calculation.net)} Std</Text><Text style={styles.muted}>netto</Text></View>
         <Text style={styles.muted}>{formatHours(calculation.elapsed)} brutto − {calculation.pause} min Pause</Text>
         {calculation.pause === 0 ? <Text style={styles.warning}>Keine Pause eingetragen – der Tag wird als „Keine Pause“ markiert.{calculation.net > 360 ? ' Ab mehr als 6 Std Arbeitszeit sind mindestens 30 min Pause vorgeschrieben (§ 4 ArbZG).' : ''}</Text> : null}
         {calculation.net > 540 && calculation.pause < 45 ? <Text style={styles.warning}>Bei mehr als 9 Std Arbeitszeit sind mindestens 45 min Pause vorgeschrieben (§ 4 ArbZG).</Text> : null}

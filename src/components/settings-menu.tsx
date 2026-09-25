@@ -19,8 +19,8 @@ function MenuItem({ icon, title, description, onPress }: MenuItemProps) {
   </TouchableOpacity>;
 }
 
-export function SettingsMenu({ visible, onClose, onOpenJobs, onOpenExport }: { visible: boolean; onClose: () => void; onOpenJobs: () => void; onOpenExport: () => void }) {
-  return <BottomSheet onClose={onClose} title="Einstellungen" visible={visible}>
+export function SettingsMenu({ visible, onClose, onOpenJobs, onOpenExport, inline = false }: { visible: boolean; onClose: () => void; onOpenJobs: () => void; onOpenExport: () => void; inline?: boolean }) {
+  return <BottomSheet inline={inline} onClose={onClose} title="Einstellungen" visible={visible}>
     <View style={styles.menu}>
       <MenuItem description="Jobs hinzufügen, umbenennen oder löschen" icon="briefcase-outline" onPress={onOpenJobs} title="Job-Einstellungen" />
       <View style={styles.divider} />

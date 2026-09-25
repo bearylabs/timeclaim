@@ -16,6 +16,8 @@ type BackupSheetProps = {
   onRestore: (state: AppState) => Promise<boolean>;
   onWipe: () => Promise<boolean>;
   onToast: (message: string) => void;
+  inline?: boolean;
+  onBusyChange?: (busy: boolean) => void;
 };
 
 export function BackupSheet({
@@ -25,6 +27,8 @@ export function BackupSheet({
   onRestore,
   onWipe,
   onToast,
+  inline = false,
+  onBusyChange,
 }: BackupSheetProps) {
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -149,7 +153,12 @@ export function BackupSheet({
   };
 
   const busy = loading || exporting || restoring || wiping;
-  return <BottomSheet onClose={busy ? () => undefined : onClose} title="Daten sichern" visible={visible}>
+  useEffect(() => {
+    onBusyChange?.(busy);
+    return () => onBusyChange?.(false);
+  }, [busy, onBusyChange]);
+
+  return <BottomSheet closeIcon="back" dismissible={!busy} inline={inline} onClose={onClose} title="Daten sichern" visible={visible}>
     <Text style={styles.hint}>Die Sicherung enthält alle Arbeitsverhältnisse. Alle Einträge liegen nur auf diesem Gerät. Sichere sie regelmäßig – oder übertrage sie mit dem Text unten auf ein anderes Gerät.</Text>
     <TextInput editable={!busy} maxLength={MAX_BACKUP_LENGTH + 1} multiline onChangeText={setText} placeholder={loading ? 'Aktuelle Daten werden geladen …' : undefined} spellCheck={false} style={styles.backup} textAlignVertical="top" value={text} />
     <View style={styles.actions}>

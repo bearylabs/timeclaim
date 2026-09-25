@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { BottomSheet, Button } from './primitives';
 import { colors, employmentColors, font } from '@/constants/theme';
@@ -13,11 +13,18 @@ type Props = {
   onChange: (id: string, patch: EmploymentPatch) => Promise<boolean>;
   onAdd: () => Promise<boolean>;
   onDelete: (id: string) => Promise<boolean>;
+  inline?: boolean;
+  onBusyChange?: (busy: boolean) => void;
 };
 
-export function JobsSheet({ visible, state, onClose, onChange, onAdd, onDelete }: Props) {
+export function JobsSheet({ visible, state, onClose, onChange, onAdd, onDelete, inline = false, onBusyChange }: Props) {
   const [adding, setAdding] = useState(false);
   const addingRef = useRef(false);
+
+  useEffect(() => {
+    onBusyChange?.(adding);
+    return () => onBusyChange?.(false);
+  }, [adding, onBusyChange]);
 
   const add = async () => {
     if (addingRef.current) return;
@@ -27,7 +34,7 @@ export function JobsSheet({ visible, state, onClose, onChange, onAdd, onDelete }
     finally { addingRef.current = false; setAdding(false); }
   };
 
-  return <BottomSheet onClose={adding ? () => undefined : onClose} title="Arbeitsverhältnisse" visible={visible}>
+  return <BottomSheet closeIcon="back" dismissible={!adding} inline={inline} onClose={onClose} title="Arbeitsverhältnisse" visible={visible}>
     <Text style={styles.hint}>Jeder Job wird für sich ausgewertet: Zeiten, Zulagen und Abgleich bleiben getrennt. Oben wechselst du zwischen ihnen.</Text>
     <View>{state.employments.map((employment) => <EmploymentRow employment={employment} key={employment.id} onChange={onChange} onDelete={onDelete} showDelete={state.employments.length > 1} />)}</View>
     <Button disabled={adding} kind="line" onPress={() => { void add(); }}>＋ Arbeitsverhältnis hinzufügen</Button>

@@ -57,7 +57,7 @@ export function AllowanceSheet({ visible, initial, initialDate, labels, onClose,
       setSaving(false);
     }
   };
-  return <BottomSheet onClose={saving ? () => undefined : onClose} title={initial ? 'Zulage bearbeiten' : 'Zulage eintragen'} visible={visible}>
+  return <BottomSheet dismissible={!saving} onClose={onClose} title={initial ? 'Zulage bearbeiten' : 'Zulage eintragen'} visible={visible}>
     <Field label="Datum"><NativeDateTimeField mode="date" onChange={setDate} value={date} /></Field>
     <Field label="Art der Zulage"><View style={styles.chips}>{labels.map((item) => <TouchableOpacity key={item} onPress={() => setLabel(item)} style={[styles.chip, label === item && styles.chipActive]}><Text style={[styles.chipText, label === item && styles.chipTextActive]}>{item}</Text></TouchableOpacity>)}</View></Field>
     <Field label="Bezeichnung"><TextInput maxLength={INPUT_LIMITS.allowanceLabel} onChangeText={setLabel} placeholder="z. B. Schichtzulage" style={styles.input} value={label} /></Field>

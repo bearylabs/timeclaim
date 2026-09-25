@@ -8,7 +8,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "timeclaim",
     "userInterfaceStyle": "light",
-    "primaryColor": "#5146E5",
+    "primaryColor": "#0B2A73",
     "ios": {
       "icon": "./assets/images/icon.png",
       "bundleIdentifier": "de.timeclaim.app",
@@ -17,7 +17,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#5146E5",
+        "backgroundColor": "#050A19",
+        "backgroundImage": "./assets/images/android-icon-background.png",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
@@ -35,9 +36,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#F1F3F8",
+          "backgroundColor": "#050A19",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 220
         }
       ],
       "expo-sharing",
