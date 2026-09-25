@@ -55,10 +55,19 @@ export function parseHours(value: string) {
   return parseHoursInput(value).value;
 }
 
-export function isoWeek(date: Date) {
+function isoWeekThursday(date: Date) {
   const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const weekday = utc.getUTCDay() || 7;
   utc.setUTCDate(utc.getUTCDate() + 4 - weekday);
-  const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
-  return Math.ceil(((utc.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return utc;
+}
+
+export function isoWeek(date: Date) {
+  const thursday = isoWeekThursday(date);
+  const yearStart = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 1));
+  return Math.ceil(((thursday.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+}
+
+export function isoWeekYear(date: Date) {
+  return isoWeekThursday(date).getUTCFullYear();
 }
