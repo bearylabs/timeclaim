@@ -22,7 +22,8 @@ export default function HomeScreen() {
     state, hydrated, activeEmployment, setActiveEmployment, addEmployment, changeEmployment,
     deleteEmployment, restoreEmployment, saveDay: persistDay, deleteDay: persistDeleteDay,
     restoreDay, saveAllowance: persistAllowance, deleteAllowance: persistDeleteAllowance,
-    restoreAllowance, saveBilling: persistBilling, replace, clearDemo, wipe: persistWipe, hasDemo,
+    restoreAllowance, saveBilling: persistBilling, loadBackupState, replace, clearDemo,
+    wipe: persistWipe, hasDemo,
   } = useAppStore();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -218,7 +219,7 @@ export default function HomeScreen() {
       state={state}
       visible={sheet?.type === 'jobs'}
     />
-    {sheet?.type === 'backup' ? <BackupSheet key="backup" onClose={() => setSheet(null)} onRestore={restoreBackup} onToast={notify} onWipe={wipe} state={state} visible /> : null}
+    {sheet?.type === 'backup' ? <BackupSheet key="backup" onClose={() => setSheet(null)} onLoadBackup={loadBackupState} onRestore={restoreBackup} onToast={notify} onWipe={wipe} visible /> : null}
     <Toast action={toast?.action} actionDisabled={toastActionRunning} message={toast?.message ?? null} onAction={() => { void runToastAction(); }} />
   </SafeAreaView>;
 }

@@ -159,8 +159,7 @@ async function repairActiveEmployment(database: SQLiteDatabase): Promise<string 
   return first?.id ?? null;
 }
 
-export async function loadState(): Promise<AppState | null> {
-  const database = await getDatabase();
+async function loadStateFromDatabase(database: SQLiteDatabase): Promise<AppState | null> {
   const employmentRows = await database.getAllAsync<EmploymentRow>('SELECT * FROM employments ORDER BY rowid');
   if (employmentRows.length === 0) {
     await repairActiveEmployment(database);
@@ -189,6 +188,16 @@ export async function loadState(): Promise<AppState | null> {
     billingAllowanceRows,
     activeEmploymentId ?? employmentRows[0].id,
   );
+}
+
+/** Loads one consistent snapshot across all domain tables and the active employment setting. */
+export async function loadState(): Promise<AppState | null> {
+  const database = await getDatabase();
+  let state: AppState | null = null;
+  await database.withExclusiveTransactionAsync(async (transaction) => {
+    state = await loadStateFromDatabase(transaction);
+  });
+  return state;
 }
 
 export async function initializeState(initialState: AppState): Promise<void> {

@@ -116,6 +116,7 @@ type StoreValue = {
   restoreAllowance: (employmentId: string, allowance: Allowance) => Promise<void>;
   saveBilling: (month: string, billing: BillingRecord) => Promise<void>;
   clearDemo: () => Promise<void>;
+  loadBackupState: () => Promise<AppState>;
   replace: (next: AppState) => Promise<void>;
   wipe: () => Promise<void>;
   hasDemo: boolean;
@@ -238,15 +239,22 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
     await reload();
   };
 
+  const loadBackupState = async () => {
+    const loaded = await repository.loadState();
+    if (!loaded) throw new Error('Die lokale Datenbank enthält kein Arbeitsverhältnis.');
+    return loaded;
+  };
+
   const replace = async (next: AppState) => {
     await repository.replaceState(next);
-    await reload();
+    // Do not expose imported data before SQLite has committed the complete replacement.
+    setState(next);
   };
 
   const wipe = async () => {
     const employment = newEmployment();
     await repository.clearAll(employment);
-    await reload();
+    setState({ version: 1, employments: [employment], activeEmploymentId: employment.id });
   };
 
   const hasDemo = state.employments.some((employment) => employment.demo
@@ -275,6 +283,7 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
     restoreAllowance,
     saveBilling,
     clearDemo,
+    loadBackupState,
     replace,
     wipe,
     hasDemo,
