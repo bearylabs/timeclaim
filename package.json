@@ -9,6 +9,7 @@
     "expo": "~57.0.25",
     "expo-clipboard": "~57.0.2",
     "expo-constants": "~57.0.19",
+    "expo-dev-client": "~57.0.19",
     "expo-file-system": "~57.0.7",
     "expo-font": "~57.0.4",
     "expo-linking": "~57.0.11",
@@ -32,6 +33,7 @@
     "@types/react": "~19.2.2",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.2",
+    "expo-doctor": "^1.20.4",
     "jest-expo": "~57.0.5",
     "typescript": "~6.0.3"
   },
@@ -44,7 +46,12 @@
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
     "test": "jest --runInBand",
-    "test:coverage": "jest --runInBand --coverage"
+    "test:coverage": "jest --runInBand --coverage",
+    "doctor": "expo-doctor",
+    "export:android": "expo export --platform android --output-dir dist/android",
+    "build:android:development": "npx eas-cli@24.8.0 build --platform android --profile development",
+    "build:android:preview": "npx eas-cli@24.8.0 build --platform android --profile preview",
+    "build:android:production": "npx eas-cli@24.8.0 build --platform android --profile production"
   },
   "jest": {
     "preset": "jest-expo",
