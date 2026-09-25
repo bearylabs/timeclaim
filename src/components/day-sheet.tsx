@@ -41,7 +41,7 @@ export function DaySheet({ visible, date: initialDate, employment, presetWork, o
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const parsedPause = /^\d+$/.test(pause.trim()) ? Number(pause) : -1;
-  const calculation = useMemo(() => calculateDay({ start, end, pause: parsedPause }), [start, end, parsedPause]);
+  const calculation = useMemo(() => calculateDay(date, { start, end, pause: parsedPause }), [date, start, end, parsedPause]);
 
   const toggle = (key: keyof typeof toggles) => setToggles((value) => ({ ...value, [key]: !value[key] }));
   const save = async (closeAfter = true) => {
@@ -108,7 +108,9 @@ export function DaySheet({ visible, date: initialDate, employment, presetWork, o
         {calculation.pause === 0 ? <Text style={styles.warning}>Keine Pause eingetragen – der Tag wird als „Keine Pause“ markiert.{calculation.net > 360 ? ' Ab mehr als 6 Std Arbeitszeit sind mindestens 30 min Pause vorgeschrieben (§ 4 ArbZG).' : ''}</Text> : null}
         {calculation.net > 540 && calculation.pause < 45 ? <Text style={styles.warning}>Bei mehr als 9 Std Arbeitszeit sind mindestens 45 min Pause vorgeschrieben (§ 4 ArbZG).</Text> : null}
         {calculation.overnight ? <Text style={styles.muted}>Ende liegt am Folgetag.</Text> : null}
-      </> : <Text style={styles.muted}>Beginn und Ende eintragen – dann wird die Netto-Zeit berechnet.</Text>}</View>
+        {calculation.dstAdjustment !== 0 ? <Text style={styles.warning}>Zeitumstellung Europe/Berlin: Die tatsächlich verstrichene Zeit ist {Math.abs(calculation.dstAdjustment)} Minuten {calculation.dstAdjustment < 0 ? 'kürzer' : 'länger'} als die Uhrzeitspanne.</Text> : null}
+        {calculation.startAmbiguous || calculation.endAmbiguous ? <Text style={styles.muted}>Die doppelte lokale Uhrzeit wird eindeutig gewertet: {calculation.startAmbiguous ? 'Beginn beim ersten Auftreten' : ''}{calculation.startAmbiguous && calculation.endAmbiguous ? ', ' : ''}{calculation.endAmbiguous ? 'Ende beim zweiten Auftreten' : ''}.</Text> : null}
+      </> : <Text style={styles.muted}>Beginn und Ende prüfen – Zeiten während der ausgelassenen Stunde der Zeitumstellung sind nicht möglich.</Text>}</View>
       <Field label="Notiz (optional)"><TextInput maxLength={INPUT_LIMITS.note} onChangeText={setNote} placeholder="z. B. Schulung, Einsatz vor Ort" style={styles.input} value={note} /></Field>
     </View> : null}
     {MAIN_ALLOWANCES.map((label) => toggles[label] ? <View key={label} style={[styles.allowanceBox, label === 'Bereitschaft' ? styles.tealBox : styles.violetBox]}><Field label={`${label} · Betrag in € (optional)`}><TextInput keyboardType="decimal-pad" maxLength={INPUT_LIMITS.numericText} onChangeText={(value) => setAmounts((current) => ({ ...current, [label]: value }))} placeholder="0,00" style={[styles.input, styles.whiteInput]} value={amounts[label]} /></Field></View> : null)}

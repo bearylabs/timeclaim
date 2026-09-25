@@ -1,5 +1,5 @@
 import type { DayCalculation, WorkDay } from './model';
-import { parseHoursInput, timeToMinutes, workDayError } from './validation';
+import { getWorkInterval, parseHoursInput, timeToMinutes, workDayError } from './validation';
 
 export { parseNumber } from './validation';
 
@@ -18,13 +18,19 @@ export const toDateKey = (date: Date) => dateKey(date.getFullYear(), date.getMon
 
 export const toMinutes = timeToMinutes;
 
-export function calculateDay(day: Pick<WorkDay, 'start' | 'end' | 'pause'>): DayCalculation | null {
+export function calculateDay(date: string, day: Pick<WorkDay, 'start' | 'end' | 'pause'>): DayCalculation | null {
   const completeDay: WorkDay = { ...day, note: '' };
-  if (workDayError('2000-01-01', completeDay)) return null;
-  const start = timeToMinutes(day.start)!;
-  const end = timeToMinutes(day.end)!;
-  const elapsed = (end - start + 1440) % 1440;
-  return { elapsed, pause: day.pause, net: elapsed - day.pause, overnight: end < start };
+  if (workDayError(date, completeDay)) return null;
+  const interval = getWorkInterval(date, day.start, day.end)!;
+  return {
+    elapsed: interval.elapsed,
+    pause: day.pause,
+    net: interval.elapsed - day.pause,
+    overnight: interval.overnight,
+    dstAdjustment: interval.dstAdjustment,
+    startAmbiguous: interval.startAmbiguous,
+    endAmbiguous: interval.endAmbiguous,
+  };
 }
 
 export function formatHours(minutes: number) {
