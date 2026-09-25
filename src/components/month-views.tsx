@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Card, SectionHeading } from './primitives';
 import { colors, employmentColors, font, shadow } from '@/constants/theme';
@@ -83,12 +83,22 @@ export function ReconciliationView({ employment, info, onBillingChange, onOpenDa
   const existing = employment.billing[info.key] ?? { hours: '', allowances: {} };
   const [billing, setBilling] = useState(existing);
   const [newLabel, setNewLabel] = useState('');
+  const saveQueue = useRef(Promise.resolve());
+  const revision = useRef(0);
   const labels = [...new Set([...MAIN_ALLOWANCES, ...info.allowances.map((item) => item.label), ...Object.keys(billing.allowances)])];
   const set = (next: typeof billing) => {
     const previous = billing;
+    const nextRevision = revision.current + 1;
+    revision.current = nextRevision;
     setBilling(next);
-    void onBillingChange(next).then((saved) => {
-      if (!saved) setBilling((current) => current === next ? previous : current);
+    saveQueue.current = saveQueue.current.then(async () => {
+      let saved = false;
+      try { saved = await onBillingChange(next); }
+      finally {
+        if (!saved && revision.current === nextRevision) setBilling(previous);
+      }
+    }).catch(() => {
+      if (revision.current === nextRevision) setBilling(previous);
     });
   };
   const hourResult = compareValue(parseHours(billing.hours), info.net, 'Std');

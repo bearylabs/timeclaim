@@ -32,9 +32,9 @@ export function BottomSheet({ visible, title, onClose, children }: PropsWithChil
   </Modal>;
 }
 
-export function Toast({ message, action, onAction }: { message: string | null; action?: string; onAction?: () => void }) {
+export function Toast({ message, action, onAction, actionDisabled = false }: { message: string | null; action?: string; onAction?: () => void; actionDisabled?: boolean }) {
   if (!message) return null;
-  return <View style={styles.toast}><Text style={styles.toastText}>{message}</Text>{action ? <TouchableOpacity onPress={onAction}><Text style={styles.toastAction}>{action}</Text></TouchableOpacity> : null}</View>;
+  return <View style={styles.toast}><Text style={styles.toastText}>{message}</Text>{action ? <TouchableOpacity disabled={actionDisabled} onPress={onAction} style={actionDisabled && styles.disabled}><Text style={styles.toastAction}>{action}</Text></TouchableOpacity> : null}</View>;
 }
 
 const styles = StyleSheet.create({

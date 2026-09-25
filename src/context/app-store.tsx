@@ -110,10 +110,10 @@ type StoreValue = {
   restoreEmployment: (employment: Employment, makeActive?: boolean) => Promise<void>;
   saveDay: (oldDate: string, newDate: string, work: WorkDay | null, managedAllowances: readonly Allowance[]) => Promise<void>;
   deleteDay: (date: string) => Promise<void>;
-  restoreDay: (date: string, work: WorkDay | undefined, allowances: readonly Allowance[]) => Promise<void>;
+  restoreDay: (employmentId: string, date: string, work: WorkDay | undefined, allowances: readonly Allowance[]) => Promise<void>;
   saveAllowance: (allowance: Allowance) => Promise<void>;
   deleteAllowance: (id: string) => Promise<void>;
-  restoreAllowance: (allowance: Allowance) => Promise<void>;
+  restoreAllowance: (employmentId: string, allowance: Allowance) => Promise<void>;
   saveBilling: (month: string, billing: BillingRecord) => Promise<void>;
   clearDemo: () => Promise<void>;
   replace: (next: AppState) => Promise<void>;
@@ -208,8 +208,8 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
     await reload();
   };
 
-  const restoreDay = async (date: string, work: WorkDay | undefined, allowances: readonly Allowance[]) => {
-    await repository.restoreDay(state.activeEmploymentId, date, work, allowances);
+  const restoreDay = async (employmentId: string, date: string, work: WorkDay | undefined, allowances: readonly Allowance[]) => {
+    await repository.restoreDay(employmentId, date, work, allowances);
     await reload();
   };
 
@@ -223,8 +223,8 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
     await reload();
   };
 
-  const restoreAllowance = async (allowance: Allowance) => {
-    await repository.saveAllowance(state.activeEmploymentId, allowance);
+  const restoreAllowance = async (employmentId: string, allowance: Allowance) => {
+    await repository.saveAllowance(employmentId, allowance);
     await reload();
   };
 
