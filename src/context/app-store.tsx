@@ -1,4 +1,6 @@
-import { createContext, type PropsWithChildren, useContext, useEffect, useState } from 'react';
+import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useRef, useState } from 'react';
+
+import { StartupError } from '@/components/startup-error';
 import * as repository from '@/database/repository';
 import type { Allowance, AppState, BillingRecord, Employment, WorkDay } from '@/domain/model';
 import { calculateDay, dateKey, formatDecimal, monthKey } from '@/domain/time';
@@ -82,7 +84,6 @@ function createInitialState(): AppState {
 
 type StoreValue = {
   state: AppState;
-  error: string | null;
   activeEmployment: Employment;
   setActiveEmployment: (id: string) => Promise<void>;
   addEmployment: (name: string, color: number) => Promise<Employment>;
@@ -105,41 +106,43 @@ type StoreValue = {
 
 const StoreContext = createContext<StoreValue | null>(null);
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Die lokale Datenbank konnte nicht geladen werden.';
-}
-
 export function AppStoreProvider({ children }: PropsWithChildren) {
   const [state, setState] = useState(createInitialState);
   const [initialized, setInitialized] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [startupFailed, setStartupFailed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const initialStateRef = useRef(state);
+  const initializingRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  const initialize = useCallback(async () => {
+    if (initializingRef.current) return;
+    initializingRef.current = true;
+    try {
+      await repository.initializeState(initialStateRef.current);
+      const loaded = await repository.loadState();
+      if (!loaded) throw new Error('Die lokale Datenbank enthält kein Arbeitsverhältnis.');
+      if (mountedRef.current) {
+        setState(loaded);
+        setStartupFailed(false);
+        setInitialized(true);
+      }
+    } catch (reason: unknown) {
+      console.error('SQLite database could not be initialized.', reason);
+      if (mountedRef.current) setStartupFailed(true);
+    } finally {
+      initializingRef.current = false;
+      if (mountedRef.current) setRetrying(false);
+    }
+  }, []);
 
   useEffect(() => {
-    let mounted = true;
-    const initialize = async () => {
-      try {
-        await repository.initializeState(state);
-        let loaded = await repository.loadState();
-        if (!loaded) {
-          const employment = newEmployment();
-          await repository.clearAll(employment);
-          loaded = await repository.loadState();
-        }
-        if (!loaded) throw new Error('Die lokale Datenbank enthält kein Arbeitsverhältnis.');
-        if (mounted) {
-          setState(loaded);
-          setInitialized(true);
-        }
-      } catch (reason: unknown) {
-        console.error('SQLite database could not be initialized.', reason);
-        if (mounted) setError(errorMessage(reason));
-      }
-    };
+    mountedRef.current = true;
+    // Initialization synchronizes React with the external SQLite store.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void initialize();
-    return () => { mounted = false; };
-    // The initial demo state must be captured exactly once for first-run seeding.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => { mountedRef.current = false; };
+  }, [initialize]);
 
   const reload = async () => {
     const loaded = await repository.loadState();
@@ -245,12 +248,15 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
     || employment.allowances.some((allowance: Allowance) => allowance.demo)
     || Object.values(employment.billing).some((billing) => billing.demo));
 
-  if (!initialized) return null;
+  if (!initialized) {
+    return startupFailed
+      ? <StartupError onRetry={() => { setRetrying(true); void initialize(); }} retrying={retrying} />
+      : null;
+  }
 
   const activeEmployment = state.employments.find((item) => item.id === state.activeEmploymentId) ?? state.employments[0];
   const value = {
     state,
-    error,
     activeEmployment,
     setActiveEmployment,
     addEmployment,
