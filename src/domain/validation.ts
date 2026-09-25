@@ -1,4 +1,4 @@
-import type { Allowance, AppState, BillingRecord, Employment, WorkDay } from './model';
+import type { Allowance, AppState, BilledAllowance, BillingRecord, Employment, WorkDay } from './model';
 
 export const INPUT_LIMITS = {
   id: 120,
@@ -277,4 +277,187 @@ export function appStateError(state: AppState): string | null {
 
 export function assertValid(error: string | null): asserts error is null {
   if (error) throw new Error(error);
+}
+
+export const MAX_BACKUP_LENGTH = 5_000_000;
+
+const COLLECTION_LIMITS = {
+  employments: 100,
+  workDays: 50_000,
+  allowances: 50_000,
+  billingRecords: 12_000,
+  billingAllowances: 50_000,
+} as const;
+
+export class BackupValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BackupValidationError';
+  }
+}
+
+function invalidBackup(path: string, message: string): never {
+  throw new BackupValidationError(`${path}: ${message}`);
+}
+
+function record(value: unknown, path: string): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    invalidBackup(path, 'muss ein Objekt sein.');
+  }
+  return value as Record<string, unknown>;
+}
+
+function fields(value: Record<string, unknown>, allowed: readonly string[], path: string): void {
+  const allowedFields = new Set(allowed);
+  const unknown = Object.keys(value).find((key) => !allowedFields.has(key));
+  if (unknown !== undefined) invalidBackup(`${path}.${unknown}`, 'ist kein unterstütztes Feld.');
+}
+
+function stringValue(value: unknown, path: string): string {
+  if (typeof value !== 'string') invalidBackup(path, 'muss Text sein.');
+  if (value.includes('\0')) invalidBackup(path, 'darf kein Nullzeichen enthalten.');
+  return value;
+}
+
+function numberValue(value: unknown, path: string): number {
+  if (typeof value !== 'number') invalidBackup(path, 'muss eine Zahl sein.');
+  return value;
+}
+
+function demoValue(value: unknown, path: string): boolean {
+  if (value === undefined) return false;
+  if (typeof value !== 'boolean') invalidBackup(path, 'muss true oder false sein.');
+  return value;
+}
+
+function validateWorkDay(value: unknown, path: string): WorkDay {
+  const item = record(value, path);
+  fields(item, ['start', 'end', 'pause', 'note', 'demo'], path);
+  const start = stringValue(item.start, `${path}.start`);
+  const end = stringValue(item.end, `${path}.end`);
+  const pause = numberValue(item.pause, `${path}.pause`);
+  const note = stringValue(item.note, `${path}.note`);
+  const demo = demoValue(item.demo, `${path}.demo`);
+  return { start, end, pause, note, ...(demo ? { demo: true } : {}) };
+}
+
+function validateAllowance(value: unknown, path: string): Allowance {
+  const item = record(value, path);
+  fields(item, ['id', 'date', 'label', 'quantity', 'amount', 'demo'], path);
+  const id = stringValue(item.id, `${path}.id`);
+  const date = stringValue(item.date, `${path}.date`);
+  const label = stringValue(item.label, `${path}.label`);
+  const quantity = numberValue(item.quantity, `${path}.quantity`);
+  const amount = item.amount === null ? null : numberValue(item.amount, `${path}.amount`);
+  const demo = demoValue(item.demo, `${path}.demo`);
+  return { id, date, label: label.trim(), quantity, amount, ...(demo ? { demo: true } : {}) };
+}
+
+function validateBilledAllowance(value: unknown, path: string): BilledAllowance {
+  const item = record(value, path);
+  fields(item, ['quantity', 'amount'], path);
+  return {
+    quantity: stringValue(item.quantity, `${path}.quantity`),
+    amount: stringValue(item.amount, `${path}.amount`),
+  };
+}
+
+function validateBilling(value: unknown, path: string, totals: Totals): BillingRecord {
+  const item = record(value, path);
+  fields(item, ['hours', 'allowances', 'demo'], path);
+  const hours = stringValue(item.hours, `${path}.hours`);
+  const rawAllowances = record(item.allowances, `${path}.allowances`);
+  const allowanceEntries = Object.entries(rawAllowances);
+  totals.billingAllowances += allowanceEntries.length;
+  if (totals.billingAllowances > COLLECTION_LIMITS.billingAllowances) {
+    invalidBackup(`${path}.allowances`, `enthält insgesamt mehr als ${COLLECTION_LIMITS.billingAllowances} Positionen.`);
+  }
+  const allowances = Object.fromEntries(allowanceEntries.map(([label, allowance]) => {
+    stringValue(label, `${path}.allowances`);
+    return [label, validateBilledAllowance(allowance, `${path}.allowances[${JSON.stringify(label)}]`)];
+  }));
+  const demo = demoValue(item.demo, `${path}.demo`);
+  return { hours, allowances, ...(demo ? { demo: true } : {}) };
+}
+
+type Totals = { workDays: number; allowances: number; billingRecords: number; billingAllowances: number };
+
+function validateEmployment(value: unknown, index: number, totals: Totals): Employment {
+  const path = `employments[${index}]`;
+  const item = record(value, path);
+  fields(item, ['id', 'name', 'color', 'days', 'allowances', 'billing', 'demo'], path);
+  const id = stringValue(item.id, `${path}.id`);
+  const name = stringValue(item.name, `${path}.name`);
+  const color = numberValue(item.color, `${path}.color`);
+
+  const rawDays = record(item.days, `${path}.days`);
+  const dayEntries = Object.entries(rawDays);
+  totals.workDays += dayEntries.length;
+  if (totals.workDays > COLLECTION_LIMITS.workDays) {
+    invalidBackup(`${path}.days`, `enthält insgesamt mehr als ${COLLECTION_LIMITS.workDays} Arbeitstage.`);
+  }
+  const days = Object.fromEntries(dayEntries.map(([date, day]) => [
+    stringValue(date, `${path}.days`),
+    validateWorkDay(day, `${path}.days[${JSON.stringify(date)}]`),
+  ]));
+
+  if (!Array.isArray(item.allowances)) invalidBackup(`${path}.allowances`, 'muss eine Liste sein.');
+  totals.allowances += item.allowances.length;
+  if (totals.allowances > COLLECTION_LIMITS.allowances) {
+    invalidBackup(`${path}.allowances`, `enthält insgesamt mehr als ${COLLECTION_LIMITS.allowances} Zulagen.`);
+  }
+  const allowances = item.allowances.map((allowance, allowanceIndex) =>
+    validateAllowance(allowance, `${path}.allowances[${allowanceIndex}]`));
+
+  const rawBilling = record(item.billing, `${path}.billing`);
+  const billingEntries = Object.entries(rawBilling);
+  totals.billingRecords += billingEntries.length;
+  if (totals.billingRecords > COLLECTION_LIMITS.billingRecords) {
+    invalidBackup(`${path}.billing`, `enthält insgesamt mehr als ${COLLECTION_LIMITS.billingRecords} Monatsabrechnungen.`);
+  }
+  const billing = Object.fromEntries(billingEntries.map(([month, bill]) => [
+    stringValue(month, `${path}.billing`),
+    validateBilling(bill, `${path}.billing[${JSON.stringify(month)}]`, totals),
+  ]));
+
+  const demo = demoValue(item.demo, `${path}.demo`);
+  return { id, name: name.trim(), color, days, allowances, billing, ...(demo ? { demo: true } : {}) };
+}
+
+/**
+ * Strictly checks the complete v1 wire format and then applies the same domain
+ * invariants used by interactive writes, including Europe/Berlin DST rules.
+ */
+export function normalizeState(input: unknown): AppState {
+  const candidate = record(input, 'Sicherung');
+  fields(candidate, ['version', 'employments', 'activeEmploymentId'], 'Sicherung');
+  if (candidate.version !== 1) invalidBackup('Sicherung.version', 'muss 1 sein. Neuere Sicherungen werden nicht unterstützt.');
+  if (!Array.isArray(candidate.employments)) invalidBackup('Sicherung.employments', 'muss eine Liste sein.');
+  if (candidate.employments.length === 0) invalidBackup('Sicherung.employments', 'muss mindestens ein Arbeitsverhältnis enthalten.');
+  if (candidate.employments.length > COLLECTION_LIMITS.employments) {
+    invalidBackup('Sicherung.employments', `darf höchstens ${COLLECTION_LIMITS.employments} Arbeitsverhältnisse enthalten.`);
+  }
+
+  const totals: Totals = { workDays: 0, allowances: 0, billingRecords: 0, billingAllowances: 0 };
+  const state: AppState = {
+    version: 1,
+    employments: candidate.employments.map((employment, index) => validateEmployment(employment, index, totals)),
+    activeEmploymentId: stringValue(candidate.activeEmploymentId, 'Sicherung.activeEmploymentId'),
+  };
+  const domainError = appStateError(state);
+  if (domainError) invalidBackup('Sicherung', domainError);
+  return state;
+}
+
+export function parseBackup(text: string): AppState {
+  if (text.length > MAX_BACKUP_LENGTH) {
+    throw new BackupValidationError(`Die Sicherung ist größer als ${Math.round(MAX_BACKUP_LENGTH / 1_000_000)} MB.`);
+  }
+  let input: unknown;
+  try {
+    input = JSON.parse(text) as unknown;
+  } catch {
+    throw new BackupValidationError('Der Sicherungstext ist kein gültiges JSON.');
+  }
+  return normalizeState(input);
 }
