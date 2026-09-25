@@ -24,6 +24,7 @@ const ACTIVE_EMPLOYMENT_KEY = 'active_employment_id';
 const DATABASE_SEEDED_KEY = 'database_seeded';
 
 export type EmploymentPatch = Partial<Pick<Employment, 'name' | 'color' | 'demo'>>;
+export type EmptyEmployment = Pick<Employment, 'id' | 'name' | 'color'>;
 
 type SettingRow = { value: string };
 type IdRow = { id: string };
@@ -44,6 +45,19 @@ async function insertEmploymentRow(database: SQLiteDatabase, employment: Employm
     employment.name,
     employment.color,
     booleanToInteger(employment.demo),
+  );
+}
+
+async function insertEmptyEmployment(
+  database: SQLiteDatabase,
+  employment: EmptyEmployment,
+): Promise<void> {
+  await database.runAsync(
+    'INSERT INTO employments (id, name, color, demo) VALUES (?, ?, ?, ?)',
+    employment.id,
+    employment.name,
+    employment.color,
+    0,
   );
 }
 
@@ -354,15 +368,17 @@ export async function saveBilling(
   });
 }
 
-export async function clearDemoData(defaultEmployment?: Employment): Promise<void> {
+export async function clearDemoData(defaultEmployment: EmptyEmployment): Promise<void> {
   const database = await getDatabase();
   await database.withExclusiveTransactionAsync(async (transaction) => {
-    await transaction.runAsync('DELETE FROM work_days WHERE demo = 1');
-    await transaction.runAsync('DELETE FROM allowances WHERE demo = 1');
-    await transaction.runAsync('DELETE FROM billing_records WHERE demo = 1');
-    await transaction.runAsync('DELETE FROM employments WHERE demo = 1');
+    await transaction.runAsync('DELETE FROM work_days WHERE demo = ?', 1);
+    await transaction.runAsync('DELETE FROM allowances WHERE demo = ?', 1);
+    // Billing positions are removed by the billing_records foreign-key cascade.
+    await transaction.runAsync('DELETE FROM billing_records WHERE demo = ?', 1);
+    // All remaining dependent rows of demo employments are removed by cascade.
+    await transaction.runAsync('DELETE FROM employments WHERE demo = ?', 1);
     const remaining = await transaction.getFirstAsync<IdRow>('SELECT id FROM employments LIMIT 1');
-    if (!remaining && defaultEmployment) await insertEmployment(transaction, defaultEmployment);
+    if (!remaining) await insertEmptyEmployment(transaction, defaultEmployment);
     await repairActiveEmployment(transaction);
   });
 }
@@ -382,15 +398,14 @@ export async function replaceState(state: AppState): Promise<void> {
   });
 }
 
-/** Deletes all domain data. Passing an employment creates the post-wipe default atomically. */
-export async function clearAll(defaultEmployment?: Employment): Promise<void> {
+/** Deletes all domain data and creates exactly one empty, non-demo employment atomically. */
+export async function clearAll(defaultEmployment: EmptyEmployment): Promise<void> {
   const database = await getDatabase();
   await database.withExclusiveTransactionAsync(async (transaction) => {
+    // Deleting employments cascades to every domain table.
     await transaction.runAsync('DELETE FROM employments');
     await transaction.runAsync('DELETE FROM app_settings WHERE key = ?', ACTIVE_EMPLOYMENT_KEY);
-    if (defaultEmployment) {
-      await insertEmployment(transaction, defaultEmployment);
-      await setSetting(transaction, ACTIVE_EMPLOYMENT_KEY, defaultEmployment.id);
-    }
+    await insertEmptyEmployment(transaction, defaultEmployment);
+    await setSetting(transaction, ACTIVE_EMPLOYMENT_KEY, defaultEmployment.id);
   });
 }
