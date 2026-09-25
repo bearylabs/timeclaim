@@ -13,9 +13,9 @@ export function BackupSheet({ visible, state, onClose, onRestore, onWipe, onToas
   const [text, setText] = useState(JSON.stringify(state));
   const saveFile = async () => {
     try {
-      const uri = `${FileSystem.cacheDirectory}stundenbuch-sicherung-${toDateKey(new Date())}.json`;
+      const uri = `${FileSystem.cacheDirectory}timeclaim-backup-${toDateKey(new Date())}.json`;
       await FileSystem.writeAsStringAsync(uri, JSON.stringify(state));
-      await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: 'Stundenbuch sichern' });
+      await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: 'TimeClaim sichern' });
     } catch { Alert.alert('Speichern nicht möglich', 'Kopiere den Sicherungstext stattdessen.'); }
   };
   const restore = () => {
@@ -23,7 +23,7 @@ export function BackupSheet({ visible, state, onClose, onRestore, onWipe, onToas
       const normalized = normalizeState(JSON.parse(text));
       if (!normalized) throw new Error();
       Alert.alert('Daten ersetzen?', 'Die aktuellen Daten werden durch diese Sicherung ersetzt.', [{ text: 'Abbrechen' }, { text: 'Wiederherstellen', onPress: () => { onRestore(normalized); onClose(); onToast('Daten wiederhergestellt'); } }]);
-    } catch { Alert.alert('Ungültige Sicherung', 'Der Text enthält keine gültige Stundenbuch-Sicherung.'); }
+    } catch { Alert.alert('Ungültige Sicherung', 'Der Text enthält keine gültige TimeClaim-Sicherung.'); }
   };
   return <BottomSheet onClose={onClose} title="Daten sichern" visible={visible}>
     <Text style={styles.hint}>Die Sicherung enthält alle Arbeitsverhältnisse. Alle Einträge liegen nur auf diesem Gerät. Sichere sie regelmäßig – oder übertrage sie mit dem Text unten auf ein anderes Gerät.</Text>
