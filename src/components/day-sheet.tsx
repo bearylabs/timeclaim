@@ -26,7 +26,7 @@ export function DaySheet({ visible, date: initialDate, employment, presetWork, o
   const previous = Object.entries(employment.days).sort(([a], [b]) => b.localeCompare(a)).find(([key]) => key !== initialDate)?.[1];
   const [date, setDate] = useState(initialDate);
   const [toggles, setToggles] = useState<Record<'work' | MainAllowance, boolean>>({
-    work: existing ? true : hasAnything ? false : presetWork,
+    work: presetWork && (Boolean(existing) || !hasAnything),
     Bereitschaft: Boolean(managed.Bereitschaft), Einspringen: Boolean(managed.Einspringen),
   });
   const [start, setStart] = useState(existing?.start ?? previous?.start ?? '07:00');
@@ -50,7 +50,10 @@ export function DaySheet({ visible, date: initialDate, employment, presetWork, o
     savingRef.current = true;
     setSaving(true);
     try {
-      const ok = await onSave(initialDate, date, toggles.work ? { start, end, pause: Math.max(0, Math.round(Number(pause) || 0)), note: note.trim() } : null, {
+      const work = toggles.work
+        ? { start, end, pause: Math.max(0, Math.round(Number(pause) || 0)), note: note.trim() }
+        : !presetWork && existing ? existing : null;
+      const ok = await onSave(initialDate, date, work, {
         Bereitschaft: toggles.Bereitschaft ? parseNumber(amounts.Bereitschaft) : undefined,
         Einspringen: toggles.Einspringen ? parseNumber(amounts.Einspringen) : undefined,
       });
