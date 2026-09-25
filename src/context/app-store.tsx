@@ -100,7 +100,6 @@ export function normalizeState(input: unknown): AppState | null {
 
 type StoreValue = {
   state: AppState;
-  hydrated: boolean;
   error: string | null;
   activeEmployment: Employment;
   setActiveEmployment: (id: string) => Promise<void>;
@@ -130,7 +129,7 @@ function errorMessage(error: unknown): string {
 
 export function AppStoreProvider({ children }: PropsWithChildren) {
   const [state, setState] = useState(createInitialState);
-  const [hydrated, setHydrated] = useState(false);
+  const [initialized, setInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -147,7 +146,7 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
         if (!loaded) throw new Error('Die lokale Datenbank enthält kein Arbeitsverhältnis.');
         if (mounted) {
           setState(loaded);
-          setHydrated(true);
+          setInitialized(true);
         }
       } catch (reason: unknown) {
         console.error('SQLite database could not be initialized.', reason);
@@ -262,12 +261,11 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
     || employment.allowances.some((allowance: Allowance) => allowance.demo)
     || Object.values(employment.billing).some((billing) => billing.demo));
 
-  if (!hydrated) return null;
+  if (!initialized) return null;
 
   const activeEmployment = state.employments.find((item) => item.id === state.activeEmploymentId) ?? state.employments[0];
   const value = {
     state,
-    hydrated,
     error,
     activeEmployment,
     setActiveEmployment,

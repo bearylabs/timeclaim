@@ -19,7 +19,7 @@ type Sheet = { type: 'day'; date: string; presetWork: boolean } | { type: 'allow
 
 export default function HomeScreen() {
   const {
-    state, hydrated, activeEmployment, setActiveEmployment, addEmployment, changeEmployment,
+    state, activeEmployment, setActiveEmployment, addEmployment, changeEmployment,
     deleteEmployment, restoreEmployment, saveDay: persistDay, deleteDay: persistDeleteDay,
     restoreDay, saveAllowance: persistAllowance, deleteAllowance: persistDeleteAllowance,
     restoreAllowance, saveBilling: persistBilling, loadBackupState, replace, clearDemo,
@@ -61,14 +61,7 @@ export default function HomeScreen() {
       : 'Die Änderung konnte nicht gespeichert werden. Bitte versuche es erneut.';
     notify(message);
   };
-  const isReady = () => {
-    if (hydrated) return true;
-    notify('Die Daten werden noch geladen. Bitte versuche es gleich noch einmal.');
-    return false;
-  };
-
   const saveDay = async (oldDate: string, newDate: string, work: WorkDay | null, managed: Record<MainAllowance, number | null | undefined>) => {
-    if (!isReady()) return false;
     if (newDate !== oldDate && work && activeEmployment.days[newDate]) { notify('Für dieses Datum gibt es schon einen Arbeitszeit-Eintrag.'); return false; }
     const previous = Object.fromEntries(MAIN_ALLOWANCES.map((label) => [label, activeEmployment.allowances.find((item) => item.date === oldDate && item.label === label)])) as Record<MainAllowance, Allowance | undefined>;
     const allowances = MAIN_ALLOWANCES.flatMap((label) => managed[label] === undefined ? [] : [{
@@ -88,7 +81,6 @@ export default function HomeScreen() {
   };
 
   const deleteDay = async (date: string) => {
-    if (!isReady()) return false;
     const employmentId = activeEmployment.id;
     const oldWork = activeEmployment.days[date];
     const oldAllowances = activeEmployment.allowances.filter((item) => item.date === date);
@@ -106,7 +98,6 @@ export default function HomeScreen() {
 
   const editingAllowance = sheet?.type === 'allowance' && sheet.id ? activeEmployment.allowances.find((item) => item.id === sheet.id) ?? null : null;
   const saveAllowance = async (allowance: Allowance) => {
-    if (!isReady()) return false;
     try {
       await persistAllowance(allowance);
       const date = parseDateKey(allowance.date); setYear(date.getFullYear()); setMonth(date.getMonth()); notify('Zulage gespeichert');
@@ -114,7 +105,6 @@ export default function HomeScreen() {
     } catch (reason) { reportError(reason); return false; }
   };
   const deleteAllowance = async (allowance: Allowance) => {
-    if (!isReady()) return false;
     const employmentId = activeEmployment.id;
     try {
       await persistDeleteAllowance(allowance.id);
@@ -128,12 +118,11 @@ export default function HomeScreen() {
     } catch (reason) { reportError(reason); return false; }
   };
   const saveBilling = async (billing: BillingRecord) => {
-    if (!isReady()) return false;
     try { await persistBilling(info.key, billing); return true; }
     catch (reason) { reportError(reason); return false; }
   };
   const selectEmployment = async (id: string) => {
-    if (!isReady() || id === state.activeEmploymentId || selectingEmploymentRef.current) return;
+    if (id === state.activeEmploymentId || selectingEmploymentRef.current) return;
     selectingEmploymentRef.current = true;
     setSelectingEmployment(true);
     try { await setActiveEmployment(id); }
@@ -141,7 +130,7 @@ export default function HomeScreen() {
     finally { selectingEmploymentRef.current = false; setSelectingEmployment(false); }
   };
   const removeDemo = async () => {
-    if (!isReady() || removingDemoRef.current) return;
+    if (removingDemoRef.current) return;
     removingDemoRef.current = true;
     setRemovingDemo(true);
     try { await clearDemo(); notify('Beispieldaten gelöscht'); }
@@ -149,12 +138,10 @@ export default function HomeScreen() {
     finally { removingDemoRef.current = false; setRemovingDemo(false); }
   };
   const restoreBackup = async (next: Parameters<typeof replace>[0]) => {
-    if (!isReady()) return false;
     try { await replace(next); notify('Daten wiederhergestellt'); return true; }
     catch (reason) { reportError(reason); return false; }
   };
   const wipe = async () => {
-    if (!isReady()) return false;
     try { await persistWipe(); notify('Alle Daten gelöscht'); return true; }
     catch (reason) { reportError(reason); return false; }
   };
@@ -185,7 +172,6 @@ export default function HomeScreen() {
     <SettingsMenu onClose={() => setSheet(null)} onOpenExport={() => setSheet({ type: 'backup' })} onOpenJobs={() => setSheet({ type: 'jobs' })} visible={sheet?.type === 'settings'} />
     <JobsSheet
       onAdd={async () => {
-        if (!isReady()) return false;
         const used = new Set(state.employments.map((item) => item.color));
         const color = [0, 1, 2, 3].find((item) => !used.has(item)) ?? 0;
         try {
@@ -195,13 +181,11 @@ export default function HomeScreen() {
         } catch (reason) { reportError(reason); return false; }
       }}
       onChange={async (id, patch) => {
-        if (!isReady()) return false;
         try { await changeEmployment(id, patch); return true; }
         catch (reason) { reportError(reason); return false; }
       }}
       onClose={() => setSheet(null)}
       onDelete={async (id) => {
-        if (!isReady()) return false;
         const removed = state.employments.find((item) => item.id === id);
         if (!removed) { notify('Das Arbeitsverhältnis wurde nicht gefunden.'); return false; }
         const wasActive = id === state.activeEmploymentId;
