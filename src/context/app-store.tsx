@@ -3,7 +3,6 @@ import { createContext, type PropsWithChildren, useCallback, useContext, useEffe
 import { StartupError } from '@/components/startup-error';
 import * as repository from '@/database/repository';
 import type { Allowance, AppState, BillingRecord, Employment, WorkDay } from '@/domain/model';
-import { calculateDay, dateKey, formatDecimal, monthKey } from '@/domain/time';
 import { normalizeState } from '@/domain/validation';
 
 export { normalizeState } from '@/domain/validation';
@@ -14,72 +13,9 @@ export function newEmployment(name = 'Hauptjob', color = 0): Employment {
   return { id: uid(), name, color, days: {}, allowances: [], billing: {} };
 }
 
-function seedEmployment(employment: Employment, year: number, month: number, scale: number) {
-  const today = new Date();
-  const limit = Math.min(new Date(year, month + 1, 0).getDate(), Math.max(today.getDate(), 14));
-  const patterns: [string, string, number][] = [
-    ['07:00', '15:30', 30], ['06:45', '15:15', 30], ['07:00', '15:30', 0],
-    ['07:00', '16:00', 30], ['08:00', '17:15', 45],
-  ];
-  let index = 0;
-  let saturday = 0;
-  let net = 0;
-  const totals: Record<string, { quantity: number; amount: number }> = {
-    Bereitschaft: { quantity: 0, amount: 0 }, Einspringen: { quantity: 0, amount: 0 },
-  };
-  const addAllowance = (date: string, label: string, amount: number) => {
-    employment.allowances.push({ id: uid(), date, label, quantity: 1, amount, demo: true });
-    totals[label].quantity += 1;
-    totals[label].amount += amount;
-  };
-  for (let day = 1; day <= limit; day += 1) {
-    const weekday = new Date(year, month, day).getDay();
-    const key = dateKey(year, month, day);
-    if (weekday === 0 || weekday === 6) {
-      if (scale === 1 && weekday === 6 && saturday < 2) {
-        addAllowance(key, 'Bereitschaft', 85);
-        saturday += 1;
-      }
-      continue;
-    }
-    if (scale === 1 && index === 5) {
-      addAllowance(key, 'Bereitschaft', 45);
-      index += 1;
-      continue;
-    }
-    if (scale === 2 && index % 4 !== 1) {
-      index += 1;
-      continue;
-    }
-    const pattern = scale === 2 ? ['17:30', '21:00', 0] as [string, string, number]
-      : index % 7 === 2 ? patterns[2]
-      : index % 5 === 4 ? patterns[4]
-      : index % 4 === 1 ? patterns[1]
-      : index % 6 === 3 ? patterns[3]
-      : patterns[0];
-    employment.days[key] = { start: pattern[0], end: pattern[1], pause: pattern[2], note: '', demo: true };
-    net += calculateDay(key, employment.days[key])?.net ?? 0;
-    if (scale === 1 && index === 8) addAllowance(key, 'Einspringen', 40);
-    index += 1;
-  }
-  const allowances: Record<string, { quantity: string; amount: string }> = {};
-  Object.entries(totals).forEach(([label, total]) => {
-    if (total.quantity) allowances[label] = { quantity: String(total.quantity), amount: total.amount.toLocaleString('de-DE', { minimumFractionDigits: 2 }) };
-  });
-  employment.billing[monthKey(year, month)] = {
-    hours: formatDecimal(net - (scale === 1 ? 30 : 0)), allowances, demo: true,
-  };
-}
-
 function createInitialState(): AppState {
-  const now = new Date();
   const main = newEmployment('Hauptjob', 0);
-  main.demo = true;
-  seedEmployment(main, now.getFullYear(), now.getMonth(), 1);
-  const side = newEmployment('Nebenjob', 2);
-  side.demo = true;
-  seedEmployment(side, now.getFullYear(), now.getMonth(), 2);
-  return { version: 1, employments: [main, side], activeEmploymentId: main.id };
+  return { version: 1, employments: [main], activeEmploymentId: main.id };
 }
 
 type StoreValue = {
