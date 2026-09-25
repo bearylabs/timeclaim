@@ -4,33 +4,12 @@ import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-nativ
 import { Card, SectionHeading } from './primitives';
 import { colors, employmentColors, font, shadow } from '@/constants/theme';
 import { MAIN_ALLOWANCES, type Employment } from '@/domain/model';
-import { calculateDay, dateKey, daysInMonth, formatDecimal, formatHours, formatMoney, formatNumber, isoWeek, monthKey, MONTHS, parseDateKey, WEEKDAYS } from '@/domain/time';
-import { billingError, INPUT_LIMITS, parseAmountInput, parseHoursInput, parseQuantityInput } from '@/domain/validation';
+import { allowanceTotal, compareAllowance, compareHours, getWeekSummaries, type MonthDay, type MonthInfo } from '@/domain/reporting';
+import { calculateDay, dateKey, formatDecimal, formatHours, formatMoney, formatNumber, MONTHS, parseDateKey, WEEKDAYS } from '@/domain/time';
+import { billingError, INPUT_LIMITS } from '@/domain/validation';
 
-export type MonthDay = { date: string; day: number; weekday: number; work: Employment['days'][string] | undefined; calculation: ReturnType<typeof calculateDay>; allowances: Employment['allowances'] };
-export type MonthInfo = { key: string; days: MonthDay[]; net: number; worked: number; noPause: string[]; allowances: Employment['allowances'] };
-
-export function getMonthInfo(employment: Employment, year: number, month: number): MonthInfo {
-  const key = monthKey(year, month);
-  const allowances = employment.allowances.filter((item) => item.date.startsWith(key));
-  const days: MonthDay[] = [];
-  let net = 0;
-  let worked = 0;
-  const noPause: string[] = [];
-  for (let day = 1; day <= daysInMonth(year, month); day += 1) {
-    const date = dateKey(year, month, day);
-    const work = employment.days[date];
-    const calculation = work ? calculateDay(date, work) : null;
-    if (calculation) { net += calculation.net; worked += 1; if (calculation.pause === 0) noPause.push(date); }
-    days.push({ date, day, weekday: new Date(year, month, day).getDay(), work, calculation, allowances: allowances.filter((item) => item.date === date) });
-  }
-  return { key, days, net, worked, noPause, allowances };
-}
-
-function allowanceTotal(info: MonthInfo, label: string) {
-  const entries = info.allowances.filter((item) => item.label === label);
-  return { quantity: entries.reduce((sum, item) => sum + item.quantity, 0), amount: entries.reduce((sum, item) => sum + (item.amount ?? 0), 0), hasAmount: entries.some((item) => item.amount !== null) };
-}
+export { getDeviationCount, getMonthInfo } from '@/domain/reporting';
+export type { MonthDay, MonthInfo } from '@/domain/reporting';
 
 export function MonthSummary({ employment, info, month }: { employment: Employment; info: MonthInfo; month: number }) {
   const theme = employmentColors[employment.color];
@@ -46,11 +25,11 @@ function formatShortDate(key: string) { const date = parseDateKey(key); return `
 export function DaysView({ employment, info, month, onOpenDay }: { employment: Employment; info: MonthInfo; month: number; onOpenDay: (date: string) => void }) {
   const [mode, setMode] = useState<'recorded' | 'all'>('recorded');
   const visible = info.days.filter((item) => mode === 'all' || item.calculation || item.allowances.length);
-  const groups = visible.reduce<{ week: number; days: MonthDay[] }[]>((all, day) => { const week = isoWeek(parseDateKey(day.date)); const last = all.at(-1); if (!last || last.week !== week) all.push({ week, days: [day] }); else last.days.push(day); return all; }, []);
+  const groups = getWeekSummaries(visible);
   return <>
     <MonthSummary employment={employment} info={info} month={month} />
     <SectionHeading right={<View style={styles.segment}><Segment active={mode === 'recorded'} label="Erfasst" onPress={() => setMode('recorded')} /><Segment active={mode === 'all'} label="Alle Tage" onPress={() => setMode('all')} /></View>}>Tage</SectionHeading>
-    {!groups.length ? <Card><Text style={styles.empty}>In diesem Monat gibt es für „{employment.name}“ noch keine Einträge. Tippe auf das Plus, um deinen ersten Arbeitstag zu erfassen.</Text></Card> : <View style={styles.dayList}>{groups.map((group) => <View key={group.week} style={styles.week}><View style={styles.weekHeader}><Text style={styles.weekText}>KW {group.week}</Text><Text style={styles.weekText}>{formatHours(group.days.reduce((sum, day) => sum + (day.calculation?.net ?? 0), 0))} Std</Text></View>{group.days.map((day) => <DayCard day={day} key={day.date} onPress={() => onOpenDay(day.date)} />)}</View>)}</View>}
+    {!groups.length ? <Card><Text style={styles.empty}>In diesem Monat gibt es für „{employment.name}“ noch keine Einträge. Tippe auf das Plus, um deinen ersten Arbeitstag zu erfassen.</Text></Card> : <View style={styles.dayList}>{groups.map((group) => <View key={group.key} style={styles.week}><View style={styles.weekHeader}><Text style={styles.weekText}>KW {group.week}</Text><Text style={styles.weekText}>{formatHours(group.net)} Std</Text></View>{group.days.map((day) => <DayCard day={day} key={day.date} onPress={() => onOpenDay(day.date)} />)}</View>)}</View>}
   </>;
 }
 
@@ -70,14 +49,6 @@ export function AllowancesView({ info, employment, onOpen }: { info: MonthInfo; 
     {others.length ? <Card><Text style={styles.cardCap}>Weitere Zulagen</Text>{others.map((label) => { const total = allowanceTotal(info, label); return <View key={label} style={styles.keyValue}><Text style={styles.kvLabel}>{label} · {formatNumber(total.quantity)}×</Text><Text style={styles.kvValue}>{total.hasAmount ? formatMoney(total.amount) : '–'}</Text></View>; })}</Card> : null}
     {!info.allowances.length ? <Card><Text style={styles.empty}>Noch keine Zulagen für „{employment.name}“ in diesem Monat. Tippe auf das Plus und wähle im Eintrag „Bereitschaft“ oder „Eingesprungen“ – mit oder ohne Arbeitszeit.</Text></Card> : <><SectionHeading>Einträge</SectionHeading><View style={styles.dayList}>{[...info.allowances].sort((a, b) => a.date.localeCompare(b.date)).map((allowance) => { const date = parseDateKey(allowance.date); const work = employment.days[allowance.date]; return <TouchableOpacity key={allowance.id} onPress={() => onOpen(allowance.id)} style={styles.dayCard}><View style={styles.dayBadge}><Text style={styles.badgeWeekday}>{WEEKDAYS[date.getDay()]}</Text><Text style={styles.badgeDay}>{String(date.getDate()).padStart(2, '0')}</Text></View><View style={styles.dayMain}><Text style={styles.dayTitle}><Text style={{ color: allowance.label === 'Bereitschaft' ? colors.teal : allowance.label === 'Einspringen' ? colors.violet : colors.accent }}>● </Text>{allowance.label === 'Einspringen' ? 'Eingesprungen' : allowance.label}{allowance.quantity !== 1 ? ` ×${formatNumber(allowance.quantity)}` : ''}</Text><Text style={styles.daySubtitle}>{work ? `Arbeitszeit ${work.start}–${work.end}` : 'ohne Arbeitszeit'}</Text></View><Text style={styles.netValue}>{allowance.amount === null ? '–' : formatMoney(allowance.amount)}</Text></TouchableOpacity>; })}</View></>}
   </>;
-}
-
-export function getDeviationCount(employment: Employment, info: MonthInfo) {
-  const billing = employment.billing[info.key];
-  if (!billing) return 0;
-  const labels = [...new Set([...MAIN_ALLOWANCES, ...info.allowances.map((item) => item.label), ...Object.keys(billing.allowances)])];
-  const hourResult = compareHours(billing.hours, info.net);
-  return (hourResult.status === 'bad' ? 1 : 0) + labels.filter((label) => compareAllowance(info, label, billing.allowances[label]).status === 'bad').length;
 }
 
 export function ReconciliationView({ employment, info, onBillingChange, onOpenDay }: { employment: Employment; info: MonthInfo; onBillingChange: (billing: Employment['billing'][string]) => Promise<boolean>; onOpenDay: (date: string) => void }) {
@@ -117,8 +88,6 @@ export function ReconciliationView({ employment, info, onBillingChange, onOpenDa
   </>;
 }
 
-function compareHours(raw: string, own: number) { const parsed = parseHoursInput(raw); if (parsed.error) return { status: 'bad' as const, message: parsed.error }; if (parsed.value === null) return { status: 'idle' as const, message: '' }; const difference = parsed.value - own; if (Math.abs(difference) <= 1) return { status: 'ok' as const, message: '' }; return { status: 'bad' as const, message: `Abrechnung: ${formatHours(Math.abs(difference))} Std ${difference < 0 ? 'weniger' : 'mehr'} als erfasst` }; }
-function compareAllowance(info: MonthInfo, label: string, billed?: { quantity: string; amount: string }) { const own = allowanceTotal(info, label); const quantity = parseQuantityInput(billed?.quantity ?? '', true, true); const amount = parseAmountInput(billed?.amount ?? '', true); const errors = [quantity.error, amount.error].filter((error): error is string => Boolean(error)); if (errors.length) return { status: 'bad' as const, message: errors.join('\n') }; if (quantity.value === null && amount.value === null) return { status: 'idle' as const, message: '' }; const messages: string[] = []; if (quantity.value !== null && Math.abs(quantity.value - own.quantity) > 0.001) messages.push(`Anzahl: ${formatNumber(Math.abs(quantity.value - own.quantity))} ${quantity.value < own.quantity ? 'weniger' : 'mehr'} als erfasst`); if (amount.value !== null && own.hasAmount && Math.abs(amount.value - own.amount) > 0.004) messages.push(`Betrag: ${formatMoney(Math.abs(amount.value - own.amount))} ${amount.value < own.amount ? 'weniger' : 'mehr'} als erfasst`); return { status: messages.length ? 'bad' as const : 'ok' as const, message: messages.join('\n') }; }
 function Result({ status, message }: { status: 'ok' | 'bad' | 'idle'; message: string }) { return <View style={styles.result}><View style={[styles.resultPill, status === 'ok' ? styles.resultOk : status === 'bad' ? styles.resultBad : styles.resultIdle]}><Text style={[styles.resultText, status === 'ok' ? { color: colors.ok } : status === 'bad' ? { color: colors.bad } : null]}>{status === 'ok' ? '✓ Stimmt' : status === 'bad' ? '! Abweichung' : 'Offen'}</Text></View>{message ? <Text style={styles.resultMessage}>{message}</Text> : null}</View>; }
 
 const styles = StyleSheet.create({
