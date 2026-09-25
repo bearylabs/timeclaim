@@ -2,7 +2,9 @@ import { createContext, type PropsWithChildren, useContext, useEffect, useState 
 import * as repository from '@/database/repository';
 import type { Allowance, AppState, BillingRecord, Employment, WorkDay } from '@/domain/model';
 import { calculateDay, dateKey, formatDecimal, monthKey } from '@/domain/time';
-import { appStateError } from '@/domain/validation';
+import { normalizeState } from '@/domain/validation';
+
+export { normalizeState } from '@/domain/validation';
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
@@ -76,22 +78,6 @@ function createInitialState(): AppState {
   side.demo = true;
   seedEmployment(side, now.getFullYear(), now.getMonth(), 2);
   return { version: 1, employments: [main, side], activeEmploymentId: main.id };
-}
-
-export function normalizeState(input: unknown): AppState | null {
-  const candidate = input as AppState;
-  if (appStateError(candidate)) return null;
-  return {
-    version: 1,
-    activeEmploymentId: candidate.activeEmploymentId,
-    employments: candidate.employments.map((employment) => ({
-      ...employment,
-      name: employment.name.trim(),
-      days: { ...employment.days },
-      allowances: employment.allowances.map((allowance) => ({ ...allowance, label: allowance.label.trim() })),
-      billing: { ...employment.billing },
-    })),
-  };
 }
 
 type StoreValue = {
@@ -241,9 +227,11 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
   };
 
   const replace = async (next: AppState) => {
-    await repository.replaceState(next);
+    // Keep this boundary defensive even when the caller already validated parsed input.
+    const validated = normalizeState(next);
+    await repository.replaceState(validated);
     // Do not expose imported data before SQLite has committed the complete replacement.
-    setState(next);
+    setState(validated);
   };
 
   const wipe = async () => {

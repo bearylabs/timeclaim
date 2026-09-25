@@ -5,7 +5,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { BottomSheet, Button } from './primitives';
 import { colors, font } from '@/constants/theme';
-import { normalizeState } from '@/context/app-store';
+import { BackupValidationError, MAX_BACKUP_LENGTH, parseBackup } from '@/domain/validation';
 import type { AppState } from '@/domain/model';
 import { toDateKey } from '@/domain/time';
 
@@ -101,14 +101,14 @@ export function BackupSheet({
   };
 
   const restore = () => {
-    let normalized: AppState | null;
+    let normalized: AppState;
     try {
-      normalized = normalizeState(JSON.parse(text));
-    } catch {
-      normalized = null;
-    }
-    if (!normalized) {
-      Alert.alert('Ungültige Sicherung', 'Der Text enthält keine gültige TimeClaim-Sicherung.');
+      normalized = parseBackup(text);
+    } catch (reason) {
+      const detail = reason instanceof BackupValidationError
+        ? reason.message
+        : 'Der Text enthält keine gültige TimeClaim-Sicherung.';
+      Alert.alert('Ungültige Sicherung', detail);
       return;
     }
 
@@ -151,7 +151,7 @@ export function BackupSheet({
   const busy = loading || exporting || restoring || wiping;
   return <BottomSheet onClose={busy ? () => undefined : onClose} title="Daten sichern" visible={visible}>
     <Text style={styles.hint}>Die Sicherung enthält alle Arbeitsverhältnisse. Alle Einträge liegen nur auf diesem Gerät. Sichere sie regelmäßig – oder übertrage sie mit dem Text unten auf ein anderes Gerät.</Text>
-    <TextInput editable={!busy} multiline onChangeText={setText} placeholder={loading ? 'Aktuelle Daten werden geladen …' : undefined} spellCheck={false} style={styles.backup} textAlignVertical="top" value={text} />
+    <TextInput editable={!busy} maxLength={MAX_BACKUP_LENGTH + 1} multiline onChangeText={setText} placeholder={loading ? 'Aktuelle Daten werden geladen …' : undefined} spellCheck={false} style={styles.backup} textAlignVertical="top" value={text} />
     <View style={styles.actions}>
       <Button disabled={busy} onPress={() => { void saveFile(); }}>Als Datei sichern</Button>
       <Button disabled={busy} kind="line" onPress={() => { void copyBackup(); }}>Aktuelle Daten kopieren</Button>
