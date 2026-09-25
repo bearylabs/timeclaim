@@ -1,6 +1,6 @@
 import { createContext, type PropsWithChildren, useContext, useEffect, useState } from 'react';
-import { getDatabase } from '@/database/database';
-import type { Allowance, AppState, Employment } from '@/domain/model';
+import * as repository from '@/database/repository';
+import type { Allowance, AppState, BillingRecord, Employment, WorkDay } from '@/domain/model';
 import { calculateDay, dateKey, formatDecimal, monthKey } from '@/domain/time';
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
@@ -101,60 +101,184 @@ export function normalizeState(input: unknown): AppState | null {
 type StoreValue = {
   state: AppState;
   hydrated: boolean;
+  error: string | null;
   activeEmployment: Employment;
-  update: (recipe: (draft: AppState) => void) => void;
-  replace: (next: AppState) => void;
-  clearDemo: () => void;
+  setActiveEmployment: (id: string) => Promise<void>;
+  addEmployment: (name: string, color: number) => Promise<Employment>;
+  changeEmployment: (id: string, patch: repository.EmploymentPatch) => Promise<void>;
+  deleteEmployment: (id: string) => Promise<void>;
+  restoreEmployment: (employment: Employment, makeActive?: boolean) => Promise<void>;
+  saveDay: (oldDate: string, newDate: string, work: WorkDay | null, managedAllowances: readonly Allowance[]) => Promise<void>;
+  deleteDay: (date: string) => Promise<void>;
+  restoreDay: (date: string, work: WorkDay | undefined, allowances: readonly Allowance[]) => Promise<void>;
+  saveAllowance: (allowance: Allowance) => Promise<void>;
+  deleteAllowance: (id: string) => Promise<void>;
+  restoreAllowance: (allowance: Allowance) => Promise<void>;
+  saveBilling: (month: string, billing: BillingRecord) => Promise<void>;
+  clearDemo: () => Promise<void>;
+  replace: (next: AppState) => Promise<void>;
+  wipe: () => Promise<void>;
   hasDemo: boolean;
 };
 
 const StoreContext = createContext<StoreValue | null>(null);
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Die lokale Datenbank konnte nicht geladen werden.';
+}
+
 export function AppStoreProvider({ children }: PropsWithChildren) {
   const [state, setState] = useState(createInitialState);
   const [hydrated, setHydrated] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    getDatabase()
-      .then(() => {
-        if (mounted) setHydrated(true);
-      })
-      .catch((error: unknown) => {
-        console.error('SQLite database could not be opened.', error);
-      });
+    const initialize = async () => {
+      try {
+        await repository.initializeState(state);
+        let loaded = await repository.loadState();
+        if (!loaded) {
+          const employment = newEmployment();
+          await repository.clearAll(employment);
+          loaded = await repository.loadState();
+        }
+        if (!loaded) throw new Error('Die lokale Datenbank enthält kein Arbeitsverhältnis.');
+        if (mounted) {
+          setState(loaded);
+          setHydrated(true);
+        }
+      } catch (reason: unknown) {
+        console.error('SQLite database could not be initialized.', reason);
+        if (mounted) setError(errorMessage(reason));
+      }
+    };
+    void initialize();
     return () => { mounted = false; };
+    // The initial demo state must be captured exactly once for first-run seeding.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const update = (recipe: (draft: AppState) => void) => {
-    setState((current) => {
-      const draft = JSON.parse(JSON.stringify(current)) as AppState;
-      recipe(draft);
-      return draft;
-    });
+  const reload = async () => {
+    const loaded = await repository.loadState();
+    if (!loaded) throw new Error('Die lokale Datenbank enthält kein Arbeitsverhältnis.');
+    setState(loaded);
   };
 
-  const replace = (next: AppState) => setState(next);
+  const setActiveEmployment = async (id: string) => {
+    await repository.setActiveEmployment(id);
+    await reload();
+  };
+
+  const addEmployment = async (name: string, color: number) => {
+    const employment = newEmployment(name, color);
+    await repository.createEmployment(employment, true);
+    await reload();
+    return employment;
+  };
+
+  const changeEmployment = async (id: string, patch: repository.EmploymentPatch) => {
+    await repository.updateEmployment(id, patch);
+    await reload();
+  };
+
+  const deleteEmployment = async (id: string) => {
+    if (state.employments.length <= 1) throw new Error('Das letzte Arbeitsverhältnis kann nicht gelöscht werden.');
+    await repository.deleteEmployment(id);
+    await reload();
+  };
+
+  const restoreEmployment = async (employment: Employment, makeActive = false) => {
+    await repository.restoreEmployment(employment, makeActive);
+    await reload();
+  };
+
+  const saveDay = async (
+    oldDate: string,
+    newDate: string,
+    work: WorkDay | null,
+    managedAllowances: readonly Allowance[],
+  ) => {
+    await repository.saveDay(state.activeEmploymentId, oldDate, newDate, work, managedAllowances);
+    await reload();
+  };
+
+  const deleteDay = async (date: string) => {
+    await repository.deleteDay(state.activeEmploymentId, date);
+    await reload();
+  };
+
+  const restoreDay = async (date: string, work: WorkDay | undefined, allowances: readonly Allowance[]) => {
+    await repository.restoreDay(state.activeEmploymentId, date, work, allowances);
+    await reload();
+  };
+
+  const saveAllowance = async (allowance: Allowance) => {
+    await repository.saveAllowance(state.activeEmploymentId, allowance);
+    await reload();
+  };
+
+  const deleteAllowance = async (id: string) => {
+    await repository.deleteAllowance(id);
+    await reload();
+  };
+
+  const restoreAllowance = async (allowance: Allowance) => {
+    await repository.saveAllowance(state.activeEmploymentId, allowance);
+    await reload();
+  };
+
+  const saveBilling = async (month: string, billing: BillingRecord) => {
+    await repository.saveBilling(state.activeEmploymentId, month, billing);
+    await reload();
+  };
+
+  const clearDemo = async () => {
+    await repository.clearDemoData(newEmployment());
+    await reload();
+  };
+
+  const replace = async (next: AppState) => {
+    await repository.replaceState(next);
+    await reload();
+  };
+
+  const wipe = async () => {
+    const employment = newEmployment();
+    await repository.clearAll(employment);
+    await reload();
+  };
+
   const hasDemo = state.employments.some((employment) => employment.demo
     || Object.values(employment.days).some((day) => day.demo)
     || employment.allowances.some((allowance: Allowance) => allowance.demo)
     || Object.values(employment.billing).some((billing) => billing.demo));
 
-  const clearDemo = () => update((draft) => {
-    draft.employments = draft.employments.filter((employment) => !employment.demo);
-    draft.employments.forEach((employment) => {
-      Object.keys(employment.days).forEach((key) => { if (employment.days[key].demo) delete employment.days[key]; });
-      employment.allowances = employment.allowances.filter((allowance) => !allowance.demo);
-      Object.keys(employment.billing).forEach((key) => { if (employment.billing[key].demo) delete employment.billing[key]; });
-    });
-    if (!draft.employments.length) draft.employments = [newEmployment()];
-    if (!draft.employments.some((employment) => employment.id === draft.activeEmploymentId)) {
-      draft.activeEmploymentId = draft.employments[0].id;
-    }
-  });
+  if (!hydrated) return null;
 
   const activeEmployment = state.employments.find((item) => item.id === state.activeEmploymentId) ?? state.employments[0];
-  const value = { state, hydrated, activeEmployment, update, replace, clearDemo, hasDemo };
+  const value = {
+    state,
+    hydrated,
+    error,
+    activeEmployment,
+    setActiveEmployment,
+    addEmployment,
+    changeEmployment,
+    deleteEmployment,
+    restoreEmployment,
+    saveDay,
+    deleteDay,
+    restoreDay,
+    saveAllowance,
+    deleteAllowance,
+    restoreAllowance,
+    saveBilling,
+    clearDemo,
+    replace,
+    wipe,
+    hasDemo,
+  };
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
 

@@ -21,6 +21,7 @@ import {
 } from '@/domain/model';
 
 const ACTIVE_EMPLOYMENT_KEY = 'active_employment_id';
+const DATABASE_SEEDED_KEY = 'database_seeded';
 
 export type EmploymentPatch = Partial<Pick<Employment, 'name' | 'color' | 'demo'>>;
 
@@ -176,15 +177,41 @@ export async function loadState(): Promise<AppState | null> {
   );
 }
 
-export async function createEmployment(employment: Employment): Promise<void> {
+export async function initializeState(initialState: AppState): Promise<void> {
   const database = await getDatabase();
-  await insertEmploymentRow(database, employment);
+  await database.withExclusiveTransactionAsync(async (transaction) => {
+    const existing = await transaction.getFirstAsync<IdRow>('SELECT id FROM employments LIMIT 1');
+    const seeded = await transaction.getFirstAsync<SettingRow>(
+      'SELECT value FROM app_settings WHERE key = ?',
+      DATABASE_SEEDED_KEY,
+    );
+
+    // Databases created by an earlier app build may already contain data but no marker.
+    if (existing) {
+      if (!seeded) await setSetting(transaction, DATABASE_SEEDED_KEY, '1');
+      return;
+    }
+    if (seeded) return;
+
+    for (const employment of initialState.employments) await insertEmployment(transaction, employment);
+    await setSetting(transaction, ACTIVE_EMPLOYMENT_KEY, initialState.activeEmploymentId);
+    await setSetting(transaction, DATABASE_SEEDED_KEY, '1');
+  });
 }
 
-export async function restoreEmployment(employment: Employment): Promise<void> {
+export async function createEmployment(employment: Employment, makeActive = false): Promise<void> {
+  const database = await getDatabase();
+  await database.withExclusiveTransactionAsync(async (transaction) => {
+    await insertEmploymentRow(transaction, employment);
+    if (makeActive) await setSetting(transaction, ACTIVE_EMPLOYMENT_KEY, employment.id);
+  });
+}
+
+export async function restoreEmployment(employment: Employment, makeActive = false): Promise<void> {
   const database = await getDatabase();
   await database.withExclusiveTransactionAsync(async (transaction) => {
     await insertEmployment(transaction, employment);
+    if (makeActive) await setSetting(transaction, ACTIVE_EMPLOYMENT_KEY, employment.id);
   });
 }
 
@@ -327,13 +354,15 @@ export async function saveBilling(
   });
 }
 
-export async function clearDemoData(): Promise<void> {
+export async function clearDemoData(defaultEmployment?: Employment): Promise<void> {
   const database = await getDatabase();
   await database.withExclusiveTransactionAsync(async (transaction) => {
     await transaction.runAsync('DELETE FROM work_days WHERE demo = 1');
     await transaction.runAsync('DELETE FROM allowances WHERE demo = 1');
     await transaction.runAsync('DELETE FROM billing_records WHERE demo = 1');
     await transaction.runAsync('DELETE FROM employments WHERE demo = 1');
+    const remaining = await transaction.getFirstAsync<IdRow>('SELECT id FROM employments LIMIT 1');
+    if (!remaining && defaultEmployment) await insertEmployment(transaction, defaultEmployment);
     await repairActiveEmployment(transaction);
   });
 }
