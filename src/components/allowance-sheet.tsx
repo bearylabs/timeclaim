@@ -12,8 +12,8 @@ type Props = {
   initialDate: string;
   labels: string[];
   onClose: () => void;
-  onSave: (allowance: Allowance) => void;
-  onDelete: (allowance: Allowance) => void;
+  onSave: (allowance: Allowance) => Promise<boolean>;
+  onDelete: (allowance: Allowance) => Promise<boolean>;
 };
 
 export function AllowanceSheet({ visible, initial, initialDate, labels, onClose, onSave, onDelete }: Props) {
@@ -21,20 +21,36 @@ export function AllowanceSheet({ visible, initial, initialDate, labels, onClose,
   const [label, setLabel] = useState(initial?.label ?? MAIN_ALLOWANCES[0]);
   const [quantity, setQuantity] = useState(String(initial?.quantity ?? 1).replace('.', ','));
   const [amount, setAmount] = useState(initial?.amount?.toString().replace('.', ',') ?? '');
-  const save = () => {
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    if (saving) return;
     const parsedQuantity = parseNumber(quantity) ?? 1;
     if (!date) return Alert.alert('Datum wählen');
     if (!label.trim()) return Alert.alert('Bezeichnung eintragen');
     if (parsedQuantity <= 0) return Alert.alert('Anzahl muss größer als 0 sein');
-    onSave({ id: initial?.id ?? `${Date.now()}-${Math.random()}`, date, label: label.trim(), quantity: parsedQuantity, amount: parseNumber(amount) });
-    onClose();
+    setSaving(true);
+    try {
+      const saved = await onSave({ id: initial?.id ?? `${Date.now()}-${Math.random()}`, date, label: label.trim(), quantity: parsedQuantity, amount: parseNumber(amount) });
+      if (saved) onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+  const remove = async () => {
+    if (!initial || saving) return;
+    setSaving(true);
+    try {
+      if (await onDelete(initial)) onClose();
+    } finally {
+      setSaving(false);
+    }
   };
   return <BottomSheet onClose={onClose} title={initial ? 'Zulage bearbeiten' : 'Zulage eintragen'} visible={visible}>
     <Field label="Datum"><NativeDateTimeField mode="date" onChange={setDate} value={date} /></Field>
     <Field label="Art der Zulage"><View style={styles.chips}>{labels.map((item) => <TouchableOpacity key={item} onPress={() => setLabel(item)} style={[styles.chip, label === item && styles.chipActive]}><Text style={[styles.chipText, label === item && styles.chipTextActive]}>{item}</Text></TouchableOpacity>)}</View></Field>
     <Field label="Bezeichnung"><TextInput onChangeText={setLabel} placeholder="z. B. Schichtzulage" style={styles.input} value={label} /></Field>
     <View style={styles.two}><Field label="Anzahl"><TextInput keyboardType="decimal-pad" onChangeText={setQuantity} style={styles.input} value={quantity} /></Field><Field label="Betrag in € (optional)"><TextInput keyboardType="decimal-pad" onChangeText={setAmount} placeholder="0,00" style={styles.input} value={amount} /></Field></View>
-    <View style={styles.actions}><Button onPress={save}>Speichern</Button>{initial ? <Button kind="danger" onPress={() => Alert.alert('Zulage löschen?', undefined, [{ text: 'Abbrechen' }, { text: 'Löschen', style: 'destructive', onPress: () => { onDelete(initial); onClose(); } }])}>Zulage löschen</Button> : null}</View>
+    <View style={styles.actions}><Button disabled={saving} onPress={() => { void save(); }}>Speichern</Button>{initial ? <Button disabled={saving} kind="danger" onPress={() => Alert.alert('Zulage löschen?', undefined, [{ text: 'Abbrechen' }, { text: 'Löschen', style: 'destructive', onPress: () => { void remove(); } }])}>Zulage löschen</Button> : null}</View>
   </BottomSheet>;
 }
 
