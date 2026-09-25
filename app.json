@@ -47,6 +47,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "bd3605d1-d8a9-4929-98e8-350dcda7634b"
+      }
+    },
+    "owner": "bearylabs"
   }
 }
