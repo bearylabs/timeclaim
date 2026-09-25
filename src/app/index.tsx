@@ -126,6 +126,11 @@ export default function HomeScreen() {
     try { await clearDemo(); notify('Beispieldaten gelöscht'); }
     catch (reason) { reportError(reason); }
   };
+  const restoreBackup = async (next: Parameters<typeof replace>[0]) => {
+    if (!isReady()) return false;
+    try { await replace(next); notify('Daten wiederhergestellt'); return true; }
+    catch (reason) { reportError(reason); return false; }
+  };
   const wipe = async () => {
     if (!isReady()) return false;
     try { await persistWipe(); notify('Alle Daten gelöscht'); return true; }
@@ -171,7 +176,7 @@ export default function HomeScreen() {
       state={state}
       visible={sheet?.type === 'jobs'}
     />
-    {sheet?.type === 'backup' ? <BackupSheet key="backup" onClose={() => setSheet(null)} onRestore={replace} onToast={notify} onWipe={wipe} state={state} visible /> : null}
+    {sheet?.type === 'backup' ? <BackupSheet key="backup" onClose={() => setSheet(null)} onRestore={restoreBackup} onToast={notify} onWipe={wipe} state={state} visible /> : null}
     <Toast action={toast?.action} message={toast?.message ?? null} onAction={() => { toast?.run?.(); setToast(null); }} />
   </SafeAreaView>;
 }
