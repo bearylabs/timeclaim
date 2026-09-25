@@ -4,7 +4,8 @@ import { BottomSheet, Button } from './primitives';
 import { NativeDateTimeField } from './native-date-time-field';
 import { colors, font } from '@/constants/theme';
 import { MAIN_ALLOWANCES, type Employment, type MainAllowance, type WorkDay } from '@/domain/model';
-import { calculateDay, formatDecimal, formatHours, parseNumber } from '@/domain/time';
+import { calculateDay, formatDecimal, formatHours } from '@/domain/time';
+import { calendarDateError, INPUT_LIMITS, parseAmountInput, workDayError } from '@/domain/validation';
 
 type Props = {
   visible: boolean;
@@ -39,23 +40,32 @@ export function DaySheet({ visible, date: initialDate, employment, presetWork, o
   });
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
-  const calculation = useMemo(() => calculateDay({ start, end, pause: Number(pause) }), [start, end, pause]);
+  const parsedPause = /^\d+$/.test(pause.trim()) ? Number(pause) : -1;
+  const calculation = useMemo(() => calculateDay({ start, end, pause: parsedPause }), [start, end, parsedPause]);
 
   const toggle = (key: keyof typeof toggles) => setToggles((value) => ({ ...value, [key]: !value[key] }));
   const save = async (closeAfter = true) => {
     if (savingRef.current) return false;
-    if (!date) { Alert.alert('Datum wählen'); return false; }
+    const dateError = calendarDateError(date);
+    if (dateError) { Alert.alert('Eingabe prüfen', dateError); return false; }
     if (!toggles.work && !toggles.Bereitschaft && !toggles.Einspringen) { Alert.alert('Auswahl fehlt', 'Wähle Arbeitszeit, Bereitschaft oder Einspringen.'); return false; }
-    if (toggles.work && !calculation) { Alert.alert('Ungültige Zeit', 'Beginn und Ende müssen unterschiedlich sein.'); return false; }
+    const work = toggles.work
+      ? { start, end, pause: parsedPause, note: note.trim() }
+      : !presetWork && existing ? existing : null;
+    if (toggles.work) {
+      const error = workDayError(date, work!);
+      if (error) { Alert.alert('Eingabe prüfen', error); return false; }
+    }
+    const parsedAmounts = Object.fromEntries(MAIN_ALLOWANCES.map((label) => [label, parseAmountInput(amounts[label])])) as Record<MainAllowance, ReturnType<typeof parseAmountInput>>;
+    for (const label of MAIN_ALLOWANCES) {
+      if (toggles[label] && parsedAmounts[label].error) { Alert.alert(`${label}: Eingabe prüfen`, parsedAmounts[label].error); return false; }
+    }
     savingRef.current = true;
     setSaving(true);
     try {
-      const work = toggles.work
-        ? { start, end, pause: Math.max(0, Math.round(Number(pause) || 0)), note: note.trim() }
-        : !presetWork && existing ? existing : null;
       const ok = await onSave(initialDate, date, work, {
-        Bereitschaft: toggles.Bereitschaft ? parseNumber(amounts.Bereitschaft) : undefined,
-        Einspringen: toggles.Einspringen ? parseNumber(amounts.Einspringen) : undefined,
+        Bereitschaft: toggles.Bereitschaft ? parsedAmounts.Bereitschaft.value : undefined,
+        Einspringen: toggles.Einspringen ? parsedAmounts.Einspringen.value : undefined,
       });
       if (ok && closeAfter) onClose();
       return ok;
@@ -90,7 +100,7 @@ export function DaySheet({ visible, date: initialDate, employment, presetWork, o
       <View style={styles.two}><Field label="Beginn"><NativeDateTimeField mode="time" onChange={setStart} value={start} /></Field><Field label="Ende"><NativeDateTimeField mode="time" onChange={setEnd} value={end} /></Field></View>
       <Field label="Pause">
         <View style={styles.pauseOptions}>{[0, 30, 45, 60].map((value) => <TouchableOpacity key={value} onPress={() => setPause(String(value))} style={[styles.pause, Number(pause) === value && styles.pauseActive]}><Text style={[styles.pauseText, Number(pause) === value && styles.pauseTextActive]}>{value ? `${value} min` : 'Keine'}</Text></TouchableOpacity>)}</View>
-        <View style={styles.customPause}><Text style={styles.muted}>oder eigene Dauer in Minuten</Text><TextInput keyboardType="number-pad" onChangeText={setPause} style={[styles.input, styles.pauseInput]} value={pause} /></View>
+        <View style={styles.customPause}><Text style={styles.muted}>oder eigene Dauer in Minuten</Text><TextInput keyboardType="number-pad" maxLength={4} onChangeText={setPause} style={[styles.input, styles.pauseInput]} value={pause} /></View>
       </Field>
       <View style={styles.calculation}>{calculation ? <>
         <View style={styles.calcMain}><Text style={styles.calcValue}>{formatHours(calculation.net)} Std</Text><Text style={styles.muted}>netto · {formatDecimal(calculation.net)} dezimal</Text></View>
@@ -99,11 +109,11 @@ export function DaySheet({ visible, date: initialDate, employment, presetWork, o
         {calculation.net > 540 && calculation.pause < 45 ? <Text style={styles.warning}>Bei mehr als 9 Std Arbeitszeit sind mindestens 45 min Pause vorgeschrieben (§ 4 ArbZG).</Text> : null}
         {calculation.overnight ? <Text style={styles.muted}>Ende liegt am Folgetag.</Text> : null}
       </> : <Text style={styles.muted}>Beginn und Ende eintragen – dann wird die Netto-Zeit berechnet.</Text>}</View>
-      <Field label="Notiz (optional)"><TextInput onChangeText={setNote} placeholder="z. B. Schulung, Einsatz vor Ort" style={styles.input} value={note} /></Field>
+      <Field label="Notiz (optional)"><TextInput maxLength={INPUT_LIMITS.note} onChangeText={setNote} placeholder="z. B. Schulung, Einsatz vor Ort" style={styles.input} value={note} /></Field>
     </View> : null}
-    {MAIN_ALLOWANCES.map((label) => toggles[label] ? <View key={label} style={[styles.allowanceBox, label === 'Bereitschaft' ? styles.tealBox : styles.violetBox]}><Field label={`${label} · Betrag in € (optional)`}><TextInput keyboardType="decimal-pad" onChangeText={(value) => setAmounts((current) => ({ ...current, [label]: value }))} placeholder="0,00" style={[styles.input, styles.whiteInput]} value={amounts[label]} /></Field></View> : null)}
+    {MAIN_ALLOWANCES.map((label) => toggles[label] ? <View key={label} style={[styles.allowanceBox, label === 'Bereitschaft' ? styles.tealBox : styles.violetBox]}><Field label={`${label} · Betrag in € (optional)`}><TextInput keyboardType="decimal-pad" maxLength={INPUT_LIMITS.numericText} onChangeText={(value) => setAmounts((current) => ({ ...current, [label]: value }))} placeholder="0,00" style={[styles.input, styles.whiteInput]} value={amounts[label]} /></Field></View> : null)}
     {otherAllowances.length ? <View style={styles.otherSection}><Text style={styles.label}>Weitere Zulagen an diesem Tag</Text>{otherAllowances.map((allowance) => <TouchableOpacity key={allowance.id} onPress={() => onEditAllowance(allowance.id)} style={styles.otherRow}><Text style={styles.otherLabel}>{allowance.label}</Text><Text style={styles.otherAmount}>{allowance.quantity}×{allowance.amount !== null ? ` · ${allowance.amount.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}` : ''}</Text></TouchableOpacity>)}</View> : null}
-    <View style={styles.actions}><Button disabled={saving} onPress={() => { void save(); }}>Speichern</Button><Button disabled={saving} kind="soft" onPress={() => { const open = async () => { const hasSelection = toggles.work || toggles.Bereitschaft || toggles.Einspringen; if (!hasSelection || await save(false)) onOtherAllowance(date); }; void open(); }}>＋ Andere Zulage</Button>{hasAnything ? <Button disabled={saving} kind="danger" onPress={() => Alert.alert('Alles löschen?', 'Arbeitszeit und Zulagen dieses Tages werden gelöscht.', [{ text: 'Abbrechen' }, { text: 'Löschen', style: 'destructive', onPress: () => { void remove(); } }])}>Alles an diesem Tag löschen</Button> : null}</View>
+    <View style={styles.actions}><Button disabled={saving} onPress={() => { void save(); }}>Speichern</Button><Button disabled={saving} kind="soft" onPress={() => { const open = async () => { const hasSelection = toggles.work || toggles.Bereitschaft || toggles.Einspringen; if (hasSelection ? await save(false) : !calendarDateError(date)) onOtherAllowance(date); else if (!hasSelection) Alert.alert('Eingabe prüfen', calendarDateError(date) ?? undefined); }; void open(); }}>＋ Andere Zulage</Button>{hasAnything ? <Button disabled={saving} kind="danger" onPress={() => Alert.alert('Alles löschen?', 'Arbeitszeit und Zulagen dieses Tages werden gelöscht.', [{ text: 'Abbrechen' }, { text: 'Löschen', style: 'destructive', onPress: () => { void remove(); } }])}>Alles an diesem Tag löschen</Button> : null}</View>
   </BottomSheet>;
 }
 

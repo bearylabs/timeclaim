@@ -2,6 +2,7 @@ import { createContext, type PropsWithChildren, useContext, useEffect, useState 
 import * as repository from '@/database/repository';
 import type { Allowance, AppState, BillingRecord, Employment, WorkDay } from '@/domain/model';
 import { calculateDay, dateKey, formatDecimal, monthKey } from '@/domain/time';
+import { appStateError } from '@/domain/validation';
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
@@ -78,24 +79,19 @@ function createInitialState(): AppState {
 }
 
 export function normalizeState(input: unknown): AppState | null {
-  if (!input || typeof input !== 'object') return null;
-  const candidate = input as Partial<AppState>;
-  if (!Array.isArray(candidate.employments) || candidate.employments.length === 0) return null;
-  const employments = candidate.employments.filter(Boolean).map((raw, index) => {
-    const item = raw as Employment;
-    return {
-      id: typeof item.id === 'string' && item.id ? item.id : uid(),
-      name: typeof item.name === 'string' && item.name.trim() ? item.name.trim() : 'Job',
-      color: Math.max(0, Math.min(3, Math.round(Number(item.color) || index % 4))),
-      days: item.days && typeof item.days === 'object' ? item.days : {},
-      allowances: Array.isArray(item.allowances) ? item.allowances : [],
-      billing: item.billing && typeof item.billing === 'object' ? item.billing : {},
-      demo: Boolean(item.demo),
-    } as Employment;
-  });
-  const active = employments.some((item) => item.id === candidate.activeEmploymentId)
-    ? candidate.activeEmploymentId as string : employments[0].id;
-  return { version: 1, employments, activeEmploymentId: active };
+  const candidate = input as AppState;
+  if (appStateError(candidate)) return null;
+  return {
+    version: 1,
+    activeEmploymentId: candidate.activeEmploymentId,
+    employments: candidate.employments.map((employment) => ({
+      ...employment,
+      name: employment.name.trim(),
+      days: { ...employment.days },
+      allowances: employment.allowances.map((allowance) => ({ ...allowance, label: allowance.label.trim() })),
+      billing: { ...employment.billing },
+    })),
+  };
 }
 
 type StoreValue = {

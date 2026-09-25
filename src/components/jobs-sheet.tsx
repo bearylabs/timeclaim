@@ -3,6 +3,7 @@ import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'reac
 import { BottomSheet, Button } from './primitives';
 import { colors, employmentColors, font } from '@/constants/theme';
 import type { AppState, Employment } from '@/domain/model';
+import { INPUT_LIMITS } from '@/domain/validation';
 
 type EmploymentPatch = Partial<Pick<Employment, 'name' | 'color'>>;
 type Props = {
@@ -48,7 +49,9 @@ function EmploymentRow({ employment, showDelete, onChange, onDelete }: { employm
     finally { savingRef.current = false; setSaving(false); }
   };
   const saveName = async () => {
-    const normalized = name.trim() || 'Job';
+    const normalized = name.trim();
+    if (!normalized) { Alert.alert('Eingabe prüfen', 'Name: Bitte einen Namen für das Arbeitsverhältnis eingeben.'); setName(employment.name); return; }
+    if (normalized.length > INPUT_LIMITS.employmentName) { Alert.alert('Eingabe prüfen', `Name: Maximal ${INPUT_LIMITS.employmentName} Zeichen sind erlaubt.`); setName(employment.name); return; }
     if (normalized === employment.name) { setName(normalized); return; }
     if (!await change({ name: normalized })) setName(employment.name);
   };
@@ -62,7 +65,7 @@ function EmploymentRow({ employment, showDelete, onChange, onDelete }: { employm
 
   return <View style={styles.row}>
     <View style={styles.top}>
-      <TextInput editable={!saving} onChangeText={setName} onEndEditing={() => { void saveName(); }} style={styles.input} value={name} />
+      <TextInput editable={!saving} maxLength={INPUT_LIMITS.employmentName} onChangeText={setName} onEndEditing={() => { void saveName(); }} style={styles.input} value={name} />
       {showDelete ? <TouchableOpacity disabled={saving} onPress={() => Alert.alert(`„${employment.name}“ löschen?`, 'Alle zugehörigen Einträge werden gelöscht.', [{ text: 'Abbrechen' }, { text: 'Löschen', style: 'destructive', onPress: () => { void remove(); } }])} style={[styles.delete, saving && styles.disabled]}><Text style={styles.deleteText}>Löschen</Text></TouchableOpacity> : null}
     </View>
     <View style={styles.bottom}>

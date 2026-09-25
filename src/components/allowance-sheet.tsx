@@ -4,7 +4,7 @@ import { BottomSheet, Button } from './primitives';
 import { NativeDateTimeField } from './native-date-time-field';
 import { colors, font } from '@/constants/theme';
 import { MAIN_ALLOWANCES, type Allowance } from '@/domain/model';
-import { parseNumber } from '@/domain/time';
+import { allowanceError, calendarDateError, INPUT_LIMITS, parseAmountInput, parseQuantityInput } from '@/domain/validation';
 
 type Props = {
   visible: boolean;
@@ -25,14 +25,21 @@ export function AllowanceSheet({ visible, initial, initialDate, labels, onClose,
   const savingRef = useRef(false);
   const save = async () => {
     if (savingRef.current) return;
-    const parsedQuantity = parseNumber(quantity) ?? 1;
-    if (!date) return Alert.alert('Datum wählen');
-    if (!label.trim()) return Alert.alert('Bezeichnung eintragen');
-    if (parsedQuantity <= 0) return Alert.alert('Anzahl muss größer als 0 sein');
+    const dateError = calendarDateError(date);
+    const parsedQuantity = parseQuantityInput(quantity);
+    const parsedAmount = parseAmountInput(amount);
+    if (dateError) return Alert.alert('Eingabe prüfen', dateError);
+    if (!label.trim()) return Alert.alert('Eingabe prüfen', 'Bezeichnung: Bitte einen Namen eingeben.');
+    if (label.trim().length > INPUT_LIMITS.allowanceLabel) return Alert.alert('Eingabe prüfen', `Bezeichnung: Maximal ${INPUT_LIMITS.allowanceLabel} Zeichen sind erlaubt.`);
+    if (parsedQuantity.error) return Alert.alert('Eingabe prüfen', parsedQuantity.error);
+    if (parsedAmount.error) return Alert.alert('Eingabe prüfen', parsedAmount.error);
+    const allowance: Allowance = { id: initial?.id ?? `${Date.now()}-${Math.random()}`, date, label: label.trim(), quantity: parsedQuantity.value!, amount: parsedAmount.value };
+    const error = allowanceError(allowance);
+    if (error) return Alert.alert('Eingabe prüfen', error);
     savingRef.current = true;
     setSaving(true);
     try {
-      const saved = await onSave({ id: initial?.id ?? `${Date.now()}-${Math.random()}`, date, label: label.trim(), quantity: parsedQuantity, amount: parseNumber(amount) });
+      const saved = await onSave(allowance);
       if (saved) onClose();
     } finally {
       savingRef.current = false;
@@ -53,8 +60,8 @@ export function AllowanceSheet({ visible, initial, initialDate, labels, onClose,
   return <BottomSheet onClose={saving ? () => undefined : onClose} title={initial ? 'Zulage bearbeiten' : 'Zulage eintragen'} visible={visible}>
     <Field label="Datum"><NativeDateTimeField mode="date" onChange={setDate} value={date} /></Field>
     <Field label="Art der Zulage"><View style={styles.chips}>{labels.map((item) => <TouchableOpacity key={item} onPress={() => setLabel(item)} style={[styles.chip, label === item && styles.chipActive]}><Text style={[styles.chipText, label === item && styles.chipTextActive]}>{item}</Text></TouchableOpacity>)}</View></Field>
-    <Field label="Bezeichnung"><TextInput onChangeText={setLabel} placeholder="z. B. Schichtzulage" style={styles.input} value={label} /></Field>
-    <View style={styles.two}><Field label="Anzahl"><TextInput keyboardType="decimal-pad" onChangeText={setQuantity} style={styles.input} value={quantity} /></Field><Field label="Betrag in € (optional)"><TextInput keyboardType="decimal-pad" onChangeText={setAmount} placeholder="0,00" style={styles.input} value={amount} /></Field></View>
+    <Field label="Bezeichnung"><TextInput maxLength={INPUT_LIMITS.allowanceLabel} onChangeText={setLabel} placeholder="z. B. Schichtzulage" style={styles.input} value={label} /></Field>
+    <View style={styles.two}><Field label="Anzahl"><TextInput keyboardType="decimal-pad" maxLength={INPUT_LIMITS.numericText} onChangeText={setQuantity} style={styles.input} value={quantity} /></Field><Field label="Betrag in € (optional)"><TextInput keyboardType="decimal-pad" maxLength={INPUT_LIMITS.numericText} onChangeText={setAmount} placeholder="0,00" style={styles.input} value={amount} /></Field></View>
     <View style={styles.actions}><Button disabled={saving} onPress={() => { void save(); }}>Speichern</Button>{initial ? <Button disabled={saving} kind="danger" onPress={() => Alert.alert('Zulage löschen?', undefined, [{ text: 'Abbrechen' }, { text: 'Löschen', style: 'destructive', onPress: () => { void remove(); } }])}>Zulage löschen</Button> : null}</View>
   </BottomSheet>;
 }

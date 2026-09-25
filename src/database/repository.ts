@@ -19,6 +19,16 @@ import {
   type Employment,
   type WorkDay,
 } from '@/domain/model';
+import {
+  allowanceError,
+  appStateError,
+  assertValid,
+  billingError,
+  calendarDateError,
+  employmentError,
+  INPUT_LIMITS,
+  workDayError,
+} from '@/domain/validation';
 
 const ACTIVE_EMPLOYMENT_KEY = 'active_employment_id';
 const DATABASE_SEEDED_KEY = 'database_seeded';
@@ -201,6 +211,7 @@ export async function loadState(): Promise<AppState | null> {
 }
 
 export async function initializeState(initialState: AppState): Promise<void> {
+  assertValid(appStateError(initialState));
   const database = await getDatabase();
   await database.withExclusiveTransactionAsync(async (transaction) => {
     const existing = await transaction.getFirstAsync<IdRow>('SELECT id FROM employments LIMIT 1');
@@ -223,6 +234,7 @@ export async function initializeState(initialState: AppState): Promise<void> {
 }
 
 export async function createEmployment(employment: Employment, makeActive = false): Promise<void> {
+  assertValid(employmentError(employment));
   const database = await getDatabase();
   await database.withExclusiveTransactionAsync(async (transaction) => {
     await insertEmploymentRow(transaction, employment);
@@ -231,6 +243,7 @@ export async function createEmployment(employment: Employment, makeActive = fals
 }
 
 export async function restoreEmployment(employment: Employment, makeActive = false): Promise<void> {
+  assertValid(employmentError(employment));
   const database = await getDatabase();
   await database.withExclusiveTransactionAsync(async (transaction) => {
     await insertEmployment(transaction, employment);
@@ -239,6 +252,9 @@ export async function restoreEmployment(employment: Employment, makeActive = fal
 }
 
 export async function updateEmployment(id: string, patch: EmploymentPatch): Promise<void> {
+  if (!id || id.length > INPUT_LIMITS.id) throw new Error('Arbeitsverhältnis: Ungültige Kennung.');
+  if (patch.name !== undefined && (!patch.name.trim() || patch.name.trim().length > INPUT_LIMITS.employmentName)) throw new Error(`Arbeitsverhältnis: Der Name muss 1 bis ${INPUT_LIMITS.employmentName} Zeichen lang sein.`);
+  if (patch.color !== undefined && (!Number.isInteger(patch.color) || patch.color < 0 || patch.color > 3)) throw new Error('Arbeitsverhältnis: Ungültige Farbe.');
   const database = await getDatabase();
   await database.withExclusiveTransactionAsync(async (transaction) => {
     if (patch.name !== undefined) {
@@ -285,6 +301,10 @@ export async function saveDay(
   workDay: WorkDay | null,
   managedAllowances: readonly Allowance[],
 ): Promise<void> {
+  assertValid(calendarDateError(oldDate, 'Bisheriges Datum'));
+  assertValid(calendarDateError(newDate, 'Neues Datum'));
+  if (workDay) assertValid(workDayError(newDate, workDay));
+  for (const allowance of managedAllowances) assertValid(allowanceError({ ...allowance, date: newDate }));
   const database = await getDatabase();
   await database.withExclusiveTransactionAsync(async (transaction) => {
     await transaction.runAsync(
@@ -311,6 +331,7 @@ export async function saveDay(
 }
 
 export async function deleteDay(employmentId: string, date: string): Promise<void> {
+  assertValid(calendarDateError(date));
   const database = await getDatabase();
   await database.withExclusiveTransactionAsync(async (transaction) => {
     await transaction.runAsync('DELETE FROM allowances WHERE employment_id = ? AND date = ?', employmentId, date);
@@ -324,6 +345,12 @@ export async function restoreDay(
   workDay: WorkDay | undefined,
   allowances: readonly Allowance[],
 ): Promise<void> {
+  assertValid(calendarDateError(date));
+  if (workDay) assertValid(workDayError(date, workDay));
+  for (const allowance of allowances) {
+    assertValid(allowanceError(allowance));
+    if (allowance.date !== date) throw new Error('Zulage: Das Datum passt nicht zum wiederhergestellten Tag.');
+  }
   const database = await getDatabase();
   await database.withExclusiveTransactionAsync(async (transaction) => {
     if (workDay) await insertWorkDay(transaction, employmentId, date, workDay);
@@ -334,6 +361,7 @@ export async function restoreDay(
 }
 
 export async function saveAllowance(employmentId: string, allowance: Allowance): Promise<void> {
+  assertValid(allowanceError(allowance));
   const database = await getDatabase();
   await database.runAsync(
     `INSERT INTO allowances
@@ -366,6 +394,7 @@ export async function saveBilling(
   month: string,
   billing: BillingRecord,
 ): Promise<void> {
+  assertValid(billingError(month, billing));
   const database = await getDatabase();
   await database.withExclusiveTransactionAsync(async (transaction) => {
     await transaction.runAsync(
@@ -393,10 +422,7 @@ export async function clearDemoData(defaultEmployment: EmptyEmployment): Promise
 }
 
 export async function replaceState(state: AppState): Promise<void> {
-  if (state.employments.length === 0) throw new Error('Der Zustand enthält kein Arbeitsverhältnis.');
-  if (!state.employments.some((employment) => employment.id === state.activeEmploymentId)) {
-    throw new Error('Das aktive Arbeitsverhältnis ist ungültig.');
-  }
+  assertValid(appStateError(state));
 
   const database = await getDatabase();
   await database.withExclusiveTransactionAsync(async (transaction) => {
