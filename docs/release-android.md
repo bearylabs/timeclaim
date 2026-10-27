@@ -41,4 +41,4 @@ EAS manages the Android `versionCode` remotely and increments it for every produ
 
 ## Branding
 
-The configured icon, adaptive icon, monochrome icon, favicon, and splash use the TimeClaim clock/check mark. Editable SVG sources live in `assets/branding/`; generated PNGs preserve Expo's icon dimensions, adaptive-icon safe zone, and transparency requirements. Review the rendered icon and splash on a physical device before a public store release.
+The configured launcher icon, adaptive icon, monochrome icon, favicon, and splash use the mint TC monogram on navy. Editable SVG sources live in `assets/branding/`. See [Branding](branding.md) for regeneration, asset mapping, safe zones and web icons. Run `npm run branding:check`, then review a fresh native build on a physical device before a public store release; icon and splash changes cannot be shipped only as an OTA update.

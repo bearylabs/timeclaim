@@ -39,6 +39,8 @@
   },
   "scripts": {
     "start": "expo start",
+    "branding:generate": "python3 scripts/generate-branding.py",
+    "branding:check": "python3 scripts/check-branding.py",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
